@@ -17,6 +17,7 @@
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/tampermonkey": "^5.0.5",
+    "playwright": "^1.60.0",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
   }

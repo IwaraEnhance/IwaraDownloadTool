@@ -104,7 +104,6 @@ function replaceTemplateVars(text: string, vars: Record<string, string>): string
     return result;
 }
 
-
 function typeCheck(): void {
     console.log('正在检查 TypeScript 类型...');
     try {
@@ -120,10 +119,17 @@ function typeCheck(): void {
 }
 
 async function main() {
-    ensureDir(distPath);
 
     // 类型检查
     typeCheck();
+
+    // 清空输出
+    await promises.rm(distPath, {
+        recursive: true,
+        force: true
+    });
+
+    ensureDir(distPath);
 
     // 读取配置
     const packageInfo = JSON.parse(readFileSync(packagePath, 'utf8'));
