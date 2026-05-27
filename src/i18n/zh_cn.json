@@ -35,7 +35,6 @@
     "filterLikedVideos": "过滤时间线上的已喜欢视频",
     "videoMetadata": "视频元数据",
     "autoInjectCheckbox": "自动注入选择框",
-    "notOfficialWarning": "警告，此网站不是Iwara官方网站，请勿填写任何敏感信息！！！继续浏览该网站？",
     "autoCopySaveFileName": "自动复制根据规则生成的文件名",
     "configurationIncompatible": "初始化或配置文件不兼容，请重新配置！",
     "browserDownloadNotEnabled": "未启用下载功能！",

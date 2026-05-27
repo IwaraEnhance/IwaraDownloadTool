@@ -31,7 +31,6 @@
     "addUnlistedAndPrivate": "非公開・限定公開動画を強制表示（作者のフォローが必要）",
     "parseUnlistedAndPrivate": "最近の非公開・限定公開動画を解析",
     "checkDownloadLink": "サードパーティクラウドストレージのダウンロードリンクをチェック",
-    "notOfficialWarning": "警告：このサイトはIwara公式サイトではありません。個人情報を入力しないでください！！！ このサイトを閲覧しますか？",
     "checkPriority": "ダウンロード画質チェック",
     "autoDownloadMetadata": "動画メタデータを自動ダウンロード",
     "filterLikedVideos": "タイムライン上のいいね済み動画をフィルタリング",

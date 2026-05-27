@@ -21,7 +21,6 @@ if (domain !== "iwara.tv" && domain !== "iwara.ai") {
     throw "Not target"
 }
 
-
 switch (GM_info.scriptHandler) {
     case 'Via':
     case 'Tampermonkey':

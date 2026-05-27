@@ -31,7 +31,6 @@
     "addUnlistedAndPrivate": "Force display unlisted and private videos (requires following the author)",
     "parseUnlistedAndPrivate": "Parse recent unlisted and private videos",
     "checkDownloadLink": "Check third-party cloud storage download links",
-    "notOfficialWarning": "Warning: This website is not the official Iwara website. Do not enter any sensitive information!!! Continue browsing this website?",
     "checkPriority": "Check download quality",
     "autoDownloadMetadata": "Auto-download metadata",
     "filterLikedVideos": "Filter liked videos on timeline",
