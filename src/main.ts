@@ -16,22 +16,7 @@ import { PageType, ToastType, VersionState } from "./enum";
 import { createInterceptedFetch } from "./fetchInterceptor";
 
 import { getDomain } from "tldts";
-var officialWhiteList = ['iwara.tv', 'iwara.zip', 'iwara.shop', 'iwara.ai']
 export var domain = getDomain(unsafeWindow.location.href) ?? ''
-if (!officialWhiteList.includes(domain) && unsafeWindow.location.hostname.includes('iwara')) {
-    // @ts-ignore
-    XMLHttpRequest.prototype.open = undefined
-    // @ts-ignore
-    unsafeWindow.fetch = undefined
-    // @ts-ignore
-    unsafeWindow.WebSocket = undefined
-    if (!confirm(stringify(i18nList[config.language].notOfficialWarning))) {
-        unsafeWindow.location.href = "about:blank"
-        unsafeWindow.close()
-    } else {
-        throw "Not official"
-    }
-}
 if (domain !== "iwara.tv" && domain !== "iwara.ai") {
     throw "Not target"
 }
