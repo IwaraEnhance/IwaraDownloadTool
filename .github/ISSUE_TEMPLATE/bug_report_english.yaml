@@ -18,6 +18,8 @@ body:
           required: true
         - label: I have not carefully read these contents and believe this will not affect subsequent processing.
           required: false
+        - label: I am using the latest version of the script
+          required: false
   - type: textarea
     id: describe
     attributes:
