@@ -551,8 +551,9 @@
     top: 5px;
     right: 5px;
     cursor: pointer;
-    font-size: 12px;
-    line-height: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 18px;
     z-index: 2147483648;
     transform-origin: center center;
 }

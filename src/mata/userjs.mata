@@ -6,7 +6,7 @@
 // @name:zh-CN        Iwara 批量下载工具
 // @description:zh-CN 批量下载 Iwara 视频
 // @icon              https://www.google.com/s2/favicons?sz=64&domain=iwara.tv
-// @namespace         https://github.com/IwaraEnhance/
+// @namespace         https://github.com/dawn-lc/
 // @author            dawn-lc
 // @license           Apache-2.0
 // @copyright         2026, Dawnlc (https://dawnlc.me/)
@@ -18,7 +18,7 @@
 // @connect           localhost
 // @connect           127.0.0.1 
 // @connect           *
-// @include           *://*.iwara.*/*
+// @include           *://*iwara*/*
 // @grant             GM_getValue
 // @grant             GM_setValue
 // @grant             GM_listValues

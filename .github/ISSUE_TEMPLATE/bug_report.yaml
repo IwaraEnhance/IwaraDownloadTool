@@ -18,6 +18,8 @@ body:
           required: true
         - label: 我未仔细阅读这些内容，并相信这不会影响后续的处理
           required: false
+        - label: 我正在使用最新版的脚本
+          required: false
   - type: textarea
     id: describe
     attributes:

@@ -18,6 +18,8 @@ body:
           required: true
         - label: これらの内容を注意深く読んでおらず、これが後の処理に影響しないと信じています。
           required: false
+        - label: 最新版のスクリプトを使用しています
+          required: false
   - type: textarea
     id: describe
     attributes:

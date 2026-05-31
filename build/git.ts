@@ -1,12 +1,17 @@
 import { execSync } from 'child_process';
+import { log, success, error } from './log.ts';
 
-/** 执行命令并输出到 stdio */
+/** 执行命令，仅在失败时输出结果到终端 */
 export function run(cmd: string): void {
     try {
-        execSync(cmd, { stdio: 'inherit' });
-    } catch (error) {
-        console.error(`命令执行失败: ${cmd}`);
-        throw error;
+        execSync(cmd, { stdio: 'pipe' });
+    } catch (err) {
+        const stderr = (err as { stderr?: Buffer }).stderr?.toString();
+        const stdout = (err as { stdout?: Buffer }).stdout?.toString();
+        if (stdout) process.stdout.write(stdout);
+        if (stderr) process.stderr.write(stderr);
+        error('git', `命令执行失败: ${cmd}`);
+        throw err;
     }
 }
 
@@ -38,8 +43,8 @@ export function getCurrentBranch(): string {
 export function checkCleanWorkingTree(): void {
     const status = exec('git status --porcelain');
     if (status) {
-        console.error('检测到未提交的更改，请先提交或暂存后再执行。');
+        error('git', '检测到未提交的更改，请先提交或暂存后再执行。');
         process.exit(1);
     }
-    console.log('工作区干净');
+    success('git', '工作区干净');
 }

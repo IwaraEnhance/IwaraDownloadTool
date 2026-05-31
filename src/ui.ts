@@ -5,7 +5,7 @@ import { isNullOrUndefined, delay, stringify } from "./env";
 import { renderNode, unlimitedFetch } from "./extension";
 import { check, getAuth, refreshToken, newToast, toastNode, aria2TaskCheckAndRestart, parseVideoInfo, addDownloadTask, analyzeDownloadTask, pushDownloadTask, importConfig } from "./function";
 import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "./hijack";
-import { i18nList } from "./i18n";
+import { i18nList, type Language } from "./i18n";
 import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "./main";
 
 export function uninjectCheckbox(element: Element | Node) {
@@ -176,7 +176,7 @@ export class configEdit {
                                     },
                                     events: {
                                         change: (event: Event) => {
-                                            this.target.language = (event.target as HTMLInputElement).value
+                                            this.target.language = (event.target as HTMLInputElement).value as Language
                                         }
                                     }
                                 }

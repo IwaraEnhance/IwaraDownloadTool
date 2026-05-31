@@ -1,14 +1,14 @@
 name: Release
 on:
   push:
-    branches: 
+    branches:
       - master
     paths:
-      - 'package.json'
-      - 'package-lock.json'
-      - 'src/*'
-      - 'build/*'
-      - '.github/workflows/Release.yml'
+      - "package.json"
+      - "package-lock.json"
+      - "src/*"
+      - "build/*"
+      - ".github/workflows/Release.yml"
 env:
   release_tag: latest
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -19,54 +19,55 @@ jobs:
     if: github.actor != 'github-actions'
     runs-on: ubuntu-latest
     steps:
-    - name: 初始化Node.js环境
-      uses: actions/setup-node@v6
-      with:
-        node-version: 24
-    - name: 拉取最新代码
-      uses: actions/checkout@v6
-      with:
-        ref: master
-        fetch-depth: 0
-    - name: 安装依赖项
-      run: npm install
-    - name: 编译
-      run: npm run build ${{ env.release_tag }}
-    - name: 获取编译结果
-      run: |
-        FILES=$(find dist -type f | tr '\n' ' ')
-        echo "file_list=${FILES}" >> $GITHUB_ENV
-    - name: 获取版本号
-      run: |
-        PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
-        echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
-    - run: gh release delete v${{ env.current_version }} --cleanup-tag --yes
-      continue-on-error: true
-    - name: 发布版本存档
-      run: |
-        gh release create v${{ env.current_version }} ${{ env.file_list }} \
-          --target master \
-          --title "${{ env.current_version }}" \
-          --notes "v${{ env.current_version }} ${{ github.sha }}"
-    - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
-      continue-on-error: true
-    - name: 发布正式版本
-      run: |
-        gh release create ${{ env.release_tag }} ${{ env.file_list }} \
-          --target master \
-          --latest \
-          --title "正式版/Release ${{ env.current_version }}" \
-          --generate-notes
-    - name: 删除Dev分支
-      run: |
-        # 判断远端是否存在 dev
-        if git ls-remote --heads origin dev | grep -q 'dev'; then
-          echo "Deleting remote dev branch"
-          git push origin --delete dev
-        else
-          echo "Remote dev branch already deleted"
-        fi
-    - name: 重建Dev分支
-      run: |
-        git checkout -b dev origin/master
-        git push origin dev
+      - name: 初始化Node.js环境
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: 拉取最新代码
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: 安装依赖项
+        run: npm install
+      - name: 编译
+        run: npm run build ${{ env.release_tag }}
+      - name: 获取编译结果
+        run: |
+          FILES=$(find dist -type f | tr '\n' ' ')
+          echo "file_list=${FILES}" >> $GITHUB_ENV
+      - name: 获取版本号
+        run: |
+          PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
+          echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
+      - run: gh release delete v${{ env.current_version }} --cleanup-tag --yes
+        continue-on-error: true
+      - name: 发布版本存档
+        run: |
+          gh release create v${{ env.current_version }} ${{ env.file_list }} \
+            --target master \
+            --title "${{ env.current_version }}" \
+            --notes "v${{ env.current_version }} ${{ github.sha }}"
+        continue-on-error: true
+      - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
+        continue-on-error: true
+      - name: 发布正式版本
+        run: |
+          gh release create ${{ env.release_tag }} ${{ env.file_list }} \
+            --target master \
+            --latest \
+            --title "正式版/Release ${{ env.current_version }}" \
+            --generate-notes
+      - name: 删除Dev分支
+        run: |
+          # 判断远端是否存在 dev
+          if git ls-remote --heads origin dev | grep -q 'dev'; then
+            echo "Deleting remote dev branch"
+            git push origin --delete dev
+          else
+            echo "Remote dev branch already deleted"
+          fi
+      - name: 重建Dev分支
+        run: |
+          git checkout -b dev origin/master
+          git push origin dev

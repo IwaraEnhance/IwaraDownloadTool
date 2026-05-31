@@ -1,13 +1,14 @@
 {
   "name": "iwaradownloadtool",
   "displayName": "IwaraDownloadTool",
-  "version": "3.3.98",
+  "version": "3.3.106",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node ./test/main.ts",
-    "build": "node ./build/build.ts",
-    "release": "node ./build/release.ts"
+    "dev:i18n": "node --import tsx/esm --experimental-strip-types ./build/generate-i18n.ts --watch",
+    "test": "node --import tsx/esm --experimental-strip-types ./test/main.ts",
+    "build": "node --import tsx/esm --experimental-strip-types ./build/build.ts",
+    "release": "node --import tsx/esm --experimental-strip-types ./build/release.ts"
   },
   "dependencies": {
     "dayjs": "^1.11.20",
@@ -18,6 +19,7 @@
     "@types/node": "^24.12.2",
     "@types/tampermonkey": "^5.0.5",
     "esbuild": "^0.28.0",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }
 }

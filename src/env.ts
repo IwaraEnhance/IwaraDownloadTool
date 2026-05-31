@@ -452,49 +452,7 @@ String.prototype.toURL = function () {
     }
 }
 
-Date.prototype.add = function ({
-    years = 0,
-    months = 0,
-    days = 0,
-    hours = 0,
-    minutes = 0,
-    seconds = 0,
-    ms = 0
-} = {}) {
-    const newDate = new Date(this.getTime());
 
-    if (years) newDate.setFullYear(newDate.getFullYear() + years);
-    if (months) newDate.setMonth(newDate.getMonth() + months);
-    if (days) newDate.setDate(newDate.getDate() + days);
-    if (hours) newDate.setHours(newDate.getHours() + hours);
-    if (minutes) newDate.setMinutes(newDate.getMinutes() + minutes);
-    if (seconds) newDate.setSeconds(newDate.getSeconds() + seconds);
-    if (ms) newDate.setMilliseconds(newDate.getMilliseconds() + ms);
-
-    return newDate;
-};
-
-Date.prototype.sub = function ({
-    years = 0,
-    months = 0,
-    days = 0,
-    hours = 0,
-    minutes = 0,
-    seconds = 0,
-    ms = 0
-} = {}) {
-    const newDate = new Date(this.getTime());
-
-    if (years) newDate.setFullYear(newDate.getFullYear() - years);
-    if (months) newDate.setMonth(newDate.getMonth() - months);
-    if (days) newDate.setDate(newDate.getDate() - days);
-    if (hours) newDate.setHours(newDate.getHours() - hours);
-    if (minutes) newDate.setMinutes(newDate.getMinutes() - minutes);
-    if (seconds) newDate.setSeconds(newDate.getSeconds() - seconds);
-    if (ms) newDate.setMilliseconds(newDate.getMilliseconds() - ms);
-
-    return newDate;
-};
 
 /**
  * 节流函数，限制函数执行频率

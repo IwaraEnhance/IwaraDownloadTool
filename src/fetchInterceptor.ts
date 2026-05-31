@@ -49,8 +49,6 @@ async function handleUserTokenResponse(response: Response): Promise<void> {
     }
 }
 
-
-
 /**
  * 处理 /videos 响应，更新数据库并修改返回结果
  */

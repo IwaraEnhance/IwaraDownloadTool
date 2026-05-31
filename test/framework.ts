@@ -188,7 +188,7 @@ export class Test extends Assertions {
     }
 
     const startTime = Date.now();
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       if (this.type === 'async') {
@@ -360,4 +360,36 @@ export class TestGroup {
 
     return summary;
   }
+}
+
+/**
+ * 运行所有已注册的测试组
+ */
+export async function runAllTests(): Promise<TestSummary[]> {
+  const summaries: TestSummary[] = [];
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalSkipped = 0;
+  let totalDuration = 0;
+
+  console.log('='.repeat(50));
+  console.log('开始运行所有测试');
+  console.log('='.repeat(50));
+
+  for (const [, group] of testGroups) {
+    const summary = await group.runAll();
+    summaries.push(summary);
+    totalPassed += summary.passedTests;
+    totalFailed += summary.failedTests;
+    totalSkipped += summary.skippedTests;
+    totalDuration += summary.totalDuration;
+  }
+
+  console.log('\n' + '='.repeat(50));
+  console.log('所有测试完成');
+  console.log('='.repeat(50));
+  console.log(`总计 - 通过: ${totalPassed}, 失败: ${totalFailed}, 跳过: ${totalSkipped}`);
+  console.log(`总耗时: ${totalDuration}ms`);
+
+  return summaries;
 }
