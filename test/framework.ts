@@ -188,7 +188,7 @@ export class Test extends Assertions {
     }
 
     const startTime = Date.now();
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       if (this.type === 'async') {
