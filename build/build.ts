@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import inlineCSS from './inlineCSS.ts';
 import minifyModules from './minifyModules.ts';
 import { i18nPlugin } from './generate-i18n.ts';
+import { log, success, error } from './log.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -102,15 +103,15 @@ function replaceTemplateVars(text: string, vars: Record<string, string>): string
 }
 
 function typeCheck(): void {
-    console.log('正在检查 TypeScript 类型...');
+    log('build', '正在检查 TypeScript 类型...');
     try {
         execSync('npx tsc --noEmit --project tsconfig.json', {
             cwd: root,
             stdio: 'inherit',
         });
-        console.log('TypeScript 类型检查通过');
+        success('build', 'TypeScript 类型检查通过');
     } catch {
-        console.error('TypeScript 类型检查失败，构建终止');
+        error('build', 'TypeScript 类型检查失败，构建终止');
         process.exit(1);
     }
 }
@@ -140,7 +141,7 @@ async function main() {
     const releaseTag = process.argv[2] ?? 'dev';
     const version = `${packageInfo.version}${releaseTag === 'dev' ? '-dev.' + UUID() : ''}`;
     mataTemplate.version = version;
-    console.log(`版本: ${version}`);
+    log('build', `版本: ${version}`);
 
     // 替换 URL 占位符
     const vars: Record<string, string> = {
@@ -210,14 +211,14 @@ async function main() {
             .replace(/^\s*$/gm, '');
         await promises.writeFile(distUncompressPath, out);
     } else {
-        console.error(`构建失败：${result.errors}`);
+        error('build', `构建失败：${result.errors}`);
         process.exit(1);
     }
 
-    console.log('构建完成');
+    success('build', '构建完成');
 }
 
 main().catch((err) => {
-    console.error('构建失败:', err);
+    error('build', `构建失败: ${err}`);
     process.exit(1);
 });

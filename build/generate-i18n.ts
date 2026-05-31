@@ -2,6 +2,7 @@ import { readdirSync, writeFileSync, watch } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { Plugin } from 'esbuild';
+import { log, success, error } from './log.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -26,8 +27,10 @@ export function generateI18n(): boolean {
             'export type Language = keyof typeof i18nList;'
         ];
         writeFileSync(outputPath, lines.join('\n'), 'utf-8');
+        success('i18n', '翻译文件已生成');
         return true;
     } catch {
+        error('i18n', '翻译文件生成失败');
         return false;
     }
 }
@@ -44,11 +47,11 @@ export const i18nPlugin: Plugin = {
 
 /** 开发模式：监听 src/i18n/ 中文件新建或删除时重新生成 */
 if (process.argv.includes('--watch')) {
-    console.log('[generate-i18n] 监听中...');
+    log('i18n', '监听中...');
     generateI18n();
     watch(i18nDir, { recursive: true }, (event, filename) => {
         if (event === 'rename' && filename?.endsWith('.json')) {
-            console.log(`[generate-i18n] ${filename} 已 ${event}，重新生成`);
+            log('i18n', `${filename} 已 ${event}，重新生成`);
             generateI18n();
         }
     });
