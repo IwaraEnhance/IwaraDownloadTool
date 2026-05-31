@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { execSync } from 'child_process';
 import inlineCSS from './inlineCSS.ts';
 import minifyModules from './minifyModules.ts';
+import { i18nPlugin } from './generate-i18n.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -97,11 +98,7 @@ function serializeMetadata(metadata: MetadataDict): string {
 }
 
 function replaceTemplateVars(text: string, vars: Record<string, string>): string {
-    let result = text;
-    for (const [key, value] of Object.entries(vars)) {
-        result = result.replace(new RegExp(`%#${key}#%`, 'g'), value);
-    }
-    return result;
+    return text.replace(/%#(\w+)#%/g, (_, key) => vars[key] ?? _);
 }
 
 function typeCheck(): void {
@@ -191,7 +188,7 @@ async function main() {
         allowOverwrite: true,
         outfile: distCompressPath,
         minify: true,
-        plugins: [inlineCSS],
+        plugins: [i18nPlugin, inlineCSS],
     });
 
     const result = await esbuild.build({
@@ -200,7 +197,7 @@ async function main() {
         treeShaking: false,
         minify: false,
         sourcemap: false,
-        plugins: [minifyModules, inlineCSS],
+        plugins: [i18nPlugin, minifyModules, inlineCSS],
     });
 
     if (result.outputFiles && result.outputFiles.length > 0) {

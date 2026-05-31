@@ -44,6 +44,14 @@ function main(): void {
     // 1. 前置检查
     checkCleanWorkingTree();
 
+    // 2. 运行测试
+    log('运行测试...');
+    run('npm test');
+
+    // 3. 编译构建
+    log('执行构建编译...');
+    run('npm run build');
+
     const backupCommit = getCurrentCommit();
     const backupTag = getLatestTag();
     let newTag = '';
@@ -53,23 +61,23 @@ function main(): void {
     log(`备份提交: ${backupCommit}`);
 
     try {
-        // 2. 升级版本号
+        // 4. 升级版本号
         log(`执行 ${level} 版本升级...`);
         run(`npm version ${level} --no-git-tag-version`);
 
         const version = getPackageVersion();
         newTag = `v${version}`;
 
-        // 3. 提交版本变更
+        // 5. 提交版本变更
         log('创建版本提交...');
         run('git add package*.json');
         run(`git commit -m "release: ${newTag}"`);
 
-        // 4. 打标签
+        // 6. 打标签
         log('创建带注释的标签...');
         run(`git tag -a ${newTag} -m "Version ${version}"`);
 
-        // 5. 推送
+        // 7. 推送
         log('推送代码及标签...');
         run('git push');
         run(`git push origin ${newTag}`);

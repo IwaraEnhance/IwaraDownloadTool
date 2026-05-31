@@ -1,11 +1,15 @@
 import { execSync } from 'child_process';
 
-/** 执行命令并输出到 stdio */
+/** 执行命令，仅在失败时输出结果到终端 */
 export function run(cmd: string): void {
     try {
-        execSync(cmd, { stdio: 'inherit' });
+        execSync(cmd, { stdio: 'pipe' });
     } catch (error) {
-        console.error(`命令执行失败: ${cmd}`);
+        const stderr = (error as { stderr?: Buffer }).stderr?.toString();
+        const stdout = (error as { stdout?: Buffer }).stdout?.toString();
+        if (stdout) process.stdout.write(stdout);
+        if (stderr) process.stderr.write(stderr);
+        console.error(`\n命令执行失败: ${cmd}`);
         throw error;
     }
 }

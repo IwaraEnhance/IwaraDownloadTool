@@ -876,7 +876,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<VideoInfo> {
                     {
                         retry: true,
                         maxRetries: 3,
-                        failStatuses: [403, 404],
+                        failStatus: [403, 404],
                         retryDelay: 1000,
                         onRetry: async () => { await refreshToken() },
                         onFail: async (response) => {
@@ -1343,7 +1343,7 @@ export async function pushDownloadTask(videoInfo: VideoInfo) {
                     {
                         retry: true,
                         successStatus: 201,
-                        failStatuses: [404],
+                        failStatus: [404],
                         onFail: async (res) => {
                             newToast(ToastType.Warn, {
                                 text: `${videoInfo.Alias} %#autoFollowFailed#% ${res.status}`,
@@ -1365,7 +1365,7 @@ export async function pushDownloadTask(videoInfo: VideoInfo) {
                     {
                         retry: true,
                         successStatus: 201,
-                        failStatuses: [404],
+                        failStatus: [404],
                         onFail: async (res) => {
                             newToast(ToastType.Warn, {
                                 text: `${videoInfo.Alias} %#autoLikeFailed#% ${res.status}`,

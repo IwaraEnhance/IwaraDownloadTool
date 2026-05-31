@@ -3,7 +3,7 @@ import "./env";
 import { isNullOrUndefined, stringify } from "./env";
 import { originalConsole } from "./hijack";
 import { DownloadType } from "./enum";
-import { i18nList } from "./i18n";
+import { i18nList, Language } from "./i18n";
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,
@@ -42,7 +42,7 @@ export class Config {
     private static instance: Config;
     configChange?: Function;
     authorization?: string
-    language: string = DEFAULT_CONFIG.language
+    language: Language = DEFAULT_CONFIG.language
     autoFollow: boolean = DEFAULT_CONFIG.autoFollow
     autoLike: boolean = DEFAULT_CONFIG.autoLike
     autoDownloadMetadata: boolean = DEFAULT_CONFIG.autoDownloadMetadata
@@ -117,36 +117,23 @@ export class Config {
         Config.instance = new Config(importConfig ?? DEFAULT_CONFIG);
     }
 
-    private static getLanguage(value?: string): string {
-        function formatLanguage(value: string) {
-            return value.replace('-', '_').toLowerCase()
+    /** 尝试匹配语言，优先精确匹配，再降级到主语言部分 */
+    private static resolveLanguage(lang: string): Language | undefined {
+        const normalized = lang.replace('-', '_').toLowerCase() as Language;
+        if (i18nList[normalized]) return normalized;
+        const main = normalized.split('_')[0] as Language;
+        if (i18nList[main]) return main;
+        return undefined;
+    }
+
+    private static getLanguage(value?: string): Language {
+        const candidates = [value, navigator.language, ...(navigator.languages ?? [])];
+        for (const lang of candidates) {
+            if (!lang) continue;
+            const resolved = Config.resolveLanguage(lang);
+            if (resolved) return resolved;
         }
-        function getMainLanguage(value: string) {
-            return value.split('_').shift()!
-        }
-        if (!isNullOrUndefined(GM_getValue('language', undefined))) {
-            let custom = formatLanguage(value ?? DEFAULT_CONFIG.language)
-            if (!isNullOrUndefined(custom)) {
-                if (!isNullOrUndefined(i18nList[custom])) {
-                    return custom
-                } else {
-                    let customMain = getMainLanguage(custom)
-                    if (!isNullOrUndefined(i18nList[customMain])) {
-                        return customMain
-                    }
-                }
-            }
-        }
-        let env = formatLanguage(navigator.language ?? navigator.languages[0] ?? DEFAULT_CONFIG.language)
-        if (!isNullOrUndefined(i18nList[env])) {
-            return env
-        } else {
-            let main = getMainLanguage(env)
-            if (!isNullOrUndefined(i18nList[main])) {
-                return main
-            }
-        }
-        return DEFAULT_CONFIG.language
+        return DEFAULT_CONFIG.language;
     }
 }
 export const config = Config.getInstance();

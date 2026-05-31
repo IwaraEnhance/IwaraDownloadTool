@@ -138,7 +138,7 @@ declare enum DownloadType {
     Others
 }
 declare interface ImportConfig {
-    language: string;
+    language: import('../i18n').Language;
     autoFollow: boolean;
     autoLike: boolean;
     autoCopySaveFileName: boolean;
