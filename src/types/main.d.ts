@@ -152,6 +152,7 @@ declare interface ImportConfig {
     filterLikedVideos: boolean;
     checkPriority: boolean;
     addUnlistedAndPrivate: boolean;
+    autoCollapseMenu: boolean;
     downloadPriority: keyof Record<string, number>;
     downloadType: DownloadType;
     downloadPath: string;

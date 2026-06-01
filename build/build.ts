@@ -176,7 +176,7 @@ async function main() {
         banner: { js: matadata },
         loader: { '.json': 'json' },
         platform: 'browser',
-        target: ['es2022', 'chrome92', 'edge92', 'firefox90', 'safari15.4'],
+        target: ['es2022', 'chrome110', 'edge110', 'firefox110', 'safari16.4'],
         charset: 'utf8',
         ignoreAnnotations: true,
         legalComments: 'none',
