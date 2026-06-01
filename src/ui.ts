@@ -193,6 +193,7 @@ export class configEdit {
                         this.switchButton('autoDownloadMetadata'),
                         this.switchButton('autoCopySaveFileName'),
                         this.switchButton('addUnlistedAndPrivate'),
+                        this.switchButton('autoCollapseMenu'),
                         this.switchButton('experimentalFeatures'),
                         this.switchButton('enableUnsafeMode'),
                         this.switchButton('enableWidescreen'),
@@ -442,53 +443,58 @@ export class menu {
         // 检测是否为触摸设备（使用 matchMedia 检测 coarse pointer + maxTouchPoints 兜底）
         body.isTouchDevice = unsafeWindow.matchMedia('(pointer: coarse)').matches || (unsafeWindow.navigator.maxTouchPoints ?? 0) > 0;
 
-        if (body.isTouchDevice) {
-            // 移动端：点击菜单容器切换展开/收起
-            originalAddEventListener.call(body.interface, 'click', (event: Event) => {
-                // 只响应直接点击菜单容器（非子元素冒泡）
-                if (event.target === body.interface) {
-                    body.interface.classList.toggle('expanded');
-                }
-            });
+        if (config.autoCollapseMenu) {
+            if (body.isTouchDevice) {
+                // 移动端：点击菜单容器切换展开/收起
+                originalAddEventListener.call(body.interface, 'click', (event: Event) => {
+                    // 只响应直接点击菜单容器（非子元素冒泡）
+                    if (event.target === body.interface) {
+                        body.interface.classList.toggle('expanded');
+                    }
+                });
 
-            // 移动端：点击菜单外部区域时收起菜单
-            originalAddEventListener.call(unsafeWindow.document, 'click', (event: Event) => {
-                if (body.interface.classList.contains('expanded') &&
-                    !body.interface.contains(event.target as Node)) {
-                    body.interface.classList.remove('expanded');
-                }
-            });
+                // 移动端：点击菜单外部区域时收起菜单
+                originalAddEventListener.call(unsafeWindow.document, 'click', (event: Event) => {
+                    if (body.interface.classList.contains('expanded') &&
+                        !body.interface.contains(event.target as Node)) {
+                        body.interface.classList.remove('expanded');
+                    }
+                });
+            } else {
+                // 桌面端：保持原有的 hover 行为
+                let mouseoutTimer: number | null = null;
+
+                originalAddEventListener.call(body.interface, 'mouseover', (event: Event) => {
+                    if (mouseoutTimer !== null) {
+                        clearTimeout(mouseoutTimer);
+                        mouseoutTimer = null;
+                    }
+                    body.interface.classList.add('expanded');
+                })
+
+                originalAddEventListener.call(body.interface, 'mouseout', (event: Event) => {
+                    const e = event as MouseEvent;
+                    const relatedTarget = e.relatedTarget as Node;
+
+                    if (relatedTarget && body.interface.contains(relatedTarget)) {
+                        return;
+                    }
+
+                    mouseoutTimer = setTimeout(() => {
+                        body.interface.classList.remove('expanded');
+                        mouseoutTimer = null;
+                    }, 300);
+                })
+
+                originalAddEventListener.call(body.interface, 'click', (event: Event) => {
+                    if (event.target === body.interface) {
+                        body.interface.classList.toggle('expanded');
+                    }
+                })
+            }
         } else {
-            // 桌面端：保持原有的 hover 行为
-            let mouseoutTimer: number | null = null;
-
-            originalAddEventListener.call(body.interface, 'mouseover', (event: Event) => {
-                if (mouseoutTimer !== null) {
-                    clearTimeout(mouseoutTimer);
-                    mouseoutTimer = null;
-                }
-                body.interface.classList.add('expanded');
-            })
-
-            originalAddEventListener.call(body.interface, 'mouseout', (event: Event) => {
-                const e = event as MouseEvent;
-                const relatedTarget = e.relatedTarget as Node;
-
-                if (relatedTarget && body.interface.contains(relatedTarget)) {
-                    return;
-                }
-
-                mouseoutTimer = setTimeout(() => {
-                    body.interface.classList.remove('expanded');
-                    mouseoutTimer = null;
-                }, 300);
-            })
-
-            originalAddEventListener.call(body.interface, 'click', (event: Event) => {
-                if (event.target === body.interface) {
-                    body.interface.classList.toggle('expanded');
-                }
-            })
+            // 禁用自动收起：菜单始终保持展开
+            body.interface.classList.add('expanded');
         }
 
         body.observer = new MutationObserver((mutationsList) => body.pageType = getPageType(mutationsList) ?? body.pageType)
@@ -504,7 +510,7 @@ export class menu {
                 click: (event: Event) => {
                     !isNullOrUndefined(click) && click(name, event)
                     // 移动端：点击菜单项后自动收起菜单
-                    if (self.isTouchDevice) {
+                    if (self.isTouchDevice && config.autoCollapseMenu) {
                         setTimeout(() => self.interface.classList.remove('expanded'), 150);
                     }
                     event.stopPropagation()

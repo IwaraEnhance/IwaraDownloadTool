@@ -22,8 +22,6 @@
 
 ### 安装脚本
 
-- 从 ScriptCat 安装
-  **[前往](https://scriptcat.org/script-show-page/348)** <sup>\*推荐国内使用</sup>
 - 从 GreasyFork 安装
   **[前往](https://sleazyfork.org/scripts/422239)**
 - GitHub Release
@@ -39,7 +37,6 @@
 #### 推荐脚本管理器插件
 
 - Tampermonkey (篡改猴) **[前往官网](https://www.tampermonkey.net/)**
-- ScriptCat (脚本猫) **[前往官网](https://scriptcat.org/)** <sup>\*推荐国内使用</sup>
 
 #### 详细使用说明
 

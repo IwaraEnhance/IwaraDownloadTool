@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: ImportConfig = {
     filterLikedVideos: false,
     checkPriority: true,
     addUnlistedAndPrivate: false,
+    autoCollapseMenu: true,
     downloadPriority: 'Source',
     downloadType: DownloadType.Others,
     downloadPath: '/Iwara/%#AUTHOR#%/%#TITLE#%[%#ID#%].mp4',
@@ -47,6 +48,7 @@ export class Config {
     autoLike: boolean = DEFAULT_CONFIG.autoLike
     autoDownloadMetadata: boolean = DEFAULT_CONFIG.autoDownloadMetadata
     addUnlistedAndPrivate: boolean = DEFAULT_CONFIG.addUnlistedAndPrivate
+    autoCollapseMenu: boolean = DEFAULT_CONFIG.autoCollapseMenu
     enableUnsafeMode: boolean = DEFAULT_CONFIG.enableUnsafeMode
     enableBeautify: boolean = DEFAULT_CONFIG.enableBeautify
     enableWidescreen: boolean = DEFAULT_CONFIG.enableWidescreen

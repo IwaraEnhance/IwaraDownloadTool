@@ -27,7 +27,6 @@
 #### 推荐脚本管理器插件
 
 - Tampermonkey (篡改猴) **[前往官网](https://www.tampermonkey.net/)**
-- ScriptCat (脚本猫) **[前往官网](https://scriptcat.org/)** <sup>\*推荐国内使用</sup>
 
 #### 详细使用说明
 
