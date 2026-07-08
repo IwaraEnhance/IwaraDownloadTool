@@ -184,6 +184,60 @@ export class Database {
         return results;
     }
 
+    /**
+     * 统计 videos 表中符合条件的记录数（单事务游标，无 yield，线程安全）
+     */
+    public async countVideos(predicate?: (video: VideoInfo) => boolean): Promise<number> {
+        const db = await this.getDB();
+        const tx = db.transaction('videos', 'readonly');
+        const store = tx.store;
+        let cursor = await store.openCursor();
+        let count = 0;
+        while (cursor) {
+            if (!predicate || predicate(cursor.value as VideoInfo)) count++;
+            cursor = await cursor.continue();
+        }
+        return count;
+    }
+
+    /**
+     * 按批次迭代 videos 表，每批次使用独立事务，防止事务因 yield 自动提交
+     * @param batchSize 每批次记录数，默认 500
+     * @param predicate 可选过滤回调
+     * @yields VideoInfo[] 每批次的记录数组
+     */
+    public async *iterateVideosBatched(batchSize: number = 500, predicate?: (video: VideoInfo) => boolean): AsyncGenerator<VideoInfo[], void, void> {
+        let lastKey: any = undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+            const db = await this.getDB();
+            const tx = db.transaction('videos', 'readonly');
+            const store = tx.store;
+
+            let cursor: any;
+            if (lastKey !== undefined) {
+                cursor = await store.openCursor(IDBKeyRange.lowerBound(lastKey, true));
+            } else {
+                cursor = await store.openCursor();
+            }
+
+            const batch: VideoInfo[] = [];
+            while (cursor && batch.length < batchSize) {
+                const video = cursor.value as VideoInfo;
+                if (!predicate || predicate(video)) {
+                    batch.push(video);
+                }
+                lastKey = cursor.key;
+                cursor = await cursor.continue();
+            }
+
+            hasMore = cursor !== null;
+            // 事务在此 yield 后安全自动提交
+            yield batch;
+        }
+    }
+
     // 添加或更新视频信息
     public async putVideo(video: VideoInfo): Promise<void> {
         const db = await this.getDB();

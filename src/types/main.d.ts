@@ -163,6 +163,8 @@ declare interface ImportConfig {
     aria2Token: string;
     iwaradlPath: string;
     iwaradlToken: string;
+    mediaCenterApi: string;
+    mediaCenterApiKey: string;
     priority: Record<string, number>;
 }
 /**
@@ -255,6 +257,7 @@ interface PartialVideoInfo extends VideoInfoBase {
     ExternalUrl?: string;
     RAW: Iwara.Video;
 }
+
 interface CacheVideoInfo extends VideoInfoBase {
     Type: 'cache'
     RAW: Iwara.Video;

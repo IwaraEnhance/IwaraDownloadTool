@@ -30,6 +30,8 @@ const DEFAULT_CONFIG: ImportConfig = {
     aria2Token: '',
     iwaradlPath: 'http://127.0.0.1:23456/api/tasks',
     iwaradlToken: '',
+    mediaCenterApi: 'http://127.0.0.1:3000',
+    mediaCenterApiKey: '',
     priority: {
         'Source': 100,
         '540': 99,
@@ -68,6 +70,8 @@ export class Config {
     aria2Token: string = DEFAULT_CONFIG.aria2Token
     iwaradlPath: string = DEFAULT_CONFIG.iwaradlPath
     iwaradlToken: string = DEFAULT_CONFIG.iwaradlToken
+    mediaCenterApi: string = DEFAULT_CONFIG.mediaCenterApi
+    mediaCenterApiKey: string = DEFAULT_CONFIG.mediaCenterApiKey
     priority: Record<string, number> = DEFAULT_CONFIG.priority
     constructor(importConfig?: ImportConfig) {
         let body = new Proxy(this, {

@@ -3,7 +3,7 @@ import { db } from "./db";
 import { DownloadType, PageType, ToastType } from "./enum";
 import { isNullOrUndefined, delay, stringify } from "./env";
 import { renderNode, unlimitedFetch } from "./extension";
-import { check, getAuth, refreshToken, newToast, toastNode, aria2TaskCheckAndRestart, parseVideoInfo, addDownloadTask, analyzeDownloadTask, pushDownloadTask, importConfig } from "./function";
+import { check, getAuth, refreshToken, newToast, toastNode, aria2TaskCheckAndRestart, parseVideoInfo, addDownloadTask, analyzeDownloadTask, pushDownloadTask, importConfig, syncCachedToMediaCenter } from "./function";
 import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "./hijack";
 import { i18nList, type Language } from "./i18n";
 import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "./main";
@@ -324,6 +324,7 @@ export class configEdit {
                 this.pageChange()
                 break
             case 'checkPriority':
+            case 'experimentalFeatures':
                 this.pageChange()
                 break
             default:
@@ -372,6 +373,18 @@ export class configEdit {
             this.inputComponent('aria2Token', 'password'),
             ...proxyConfigInput
         ]
+        let mediaCenterConfigInput = [
+            this.inputComponent('mediaCenterApi', 'text', renderNode({
+                nodeType: 'a',
+                childs: '%#mediaCenterInfo#%',
+                className: 'rainbow-text',
+                attributes: {
+                    style: 'float: inline-end;',
+                    href: 'https://github.com/dawn-lc/MediaCenter'
+                }
+            })),
+            this.inputComponent('mediaCenterApiKey', 'password')
+        ]
         let iwaradlConfigInput = [
             this.inputComponent('iwaradlPath', 'text', renderNode({
                 nodeType: 'a',
@@ -389,6 +402,9 @@ export class configEdit {
             case DownloadType.Aria2:
                 downloadConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
                 aria2ConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                if (this.target.experimentalFeatures) {
+                    mediaCenterConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                }
                 break
             case DownloadType.Iwaradl:
                 downloadConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))

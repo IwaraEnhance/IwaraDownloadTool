@@ -10,7 +10,7 @@ import { originalAddEventListener, originalConsole, originalNodeAppendChild, ori
 import { Dictionary, GMSyncDictionary, Version } from "./class";
 import { db } from "./db";
 import { findElement, renderNode, unlimitedFetch } from "./extension";
-import { check, getAuth, newToast, toastNode } from "./function";
+import { check, getAuth, newToast, syncAllVideosPages, syncCachedToMediaCenter, toastNode } from "./function";
 import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui";
 import { PageType, ToastType, VersionState } from "./enum";
 import { createInterceptedFetch } from "./fetchInterceptor";
@@ -33,6 +33,10 @@ switch (GM_info.scriptHandler) {
 if (GM_getValue('isDebug')) {
     debugger
     originalConsole.debug(stringify(GM_info))
+    // @ts-ignore
+    unsafeWindow.syncCachedToMediaCenter = syncCachedToMediaCenter
+    // @ts-ignore
+    unsafeWindow.syncAllVideosPages = syncAllVideosPages
 }
 
 unsafeWindow.fetch = createInterceptedFetch();

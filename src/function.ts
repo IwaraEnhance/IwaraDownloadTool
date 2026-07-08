@@ -852,7 +852,7 @@ async function getCommentDatas(id: string, commentID?: string): Promise<Iwara.Co
     return comments
 }
 
-export async function parseVideoInfo(info: VideoInfo): Promise<VideoInfo> {
+export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | PartialVideoInfo | FailVideoInfo> {
     let ID: string = info.ID
     let Type: VideoInfoType = info.Type
     let RAW: Iwara.Video | undefined = info.RAW
@@ -1018,6 +1018,37 @@ export async function parseVideoInfo(info: VideoInfo): Promise<VideoInfo> {
     }
 }
 
+/**
+ * 计算 VideoInfo 的信息完整度分数
+ * 排序依据（从高到低）：full > partial > cache > init > fail
+ * @param {VideoInfo} info - 视频信息对象
+ * @returns {number} 完整度分数
+ */
+export function getVideoInfoCompleteness(info: VideoInfo): number {
+    switch (info.Type) {
+        case 'full': return 5;
+        case 'partial': return 4;
+        case 'fail': return 3;
+        case 'cache': return 2;
+        case 'init': return 1;
+    }
+}
+
+/**
+ * 从两个 VideoInfo 中返回信息更完整的那一个
+ * 适用于同一直视频的不同版本（如缓存 vs 完整解析后）择优保留
+ * @param {VideoInfo} a - 版本 A
+ * @param {VideoInfo} b - 版本 B
+ * @returns {VideoInfo} 信息更完整的 VideoInfo
+ * @throws {Error} 如果 ID 不同则抛出异常
+ */
+export function getMoreCompleteVideoInfo(a: VideoInfo, b: VideoInfo): VideoInfo {
+    if (a.ID !== b.ID) throw new Error(`VideoInfo ID mismatch: "${a.ID}" vs "${b.ID}"`);
+    const completenessA = getVideoInfoCompleteness(a);
+    const completenessB = getVideoInfoCompleteness(b);
+    return completenessB > completenessA ? b : a;
+}
+
 function generateMatadataURL(videoInfo: FullVideoInfo): string {
     const metadataContent = generateMetadataContent(videoInfo);
     const blob = new Blob([metadataContent], { type: 'text/plain' });
@@ -1028,7 +1059,7 @@ function getMatadataPath(videoInfo: FullVideoInfo): string {
     return `${videoPath.directory}/${videoPath.baseName}.json`;
 }
 function generateMetadataContent(videoInfo: FullVideoInfo): string {
-    const metadata = Object.assign(videoInfo, {
+    const metadata = Object.assign({}, videoInfo, {
         DownloadPath: getDownloadPath(videoInfo).fullPath,
         MetaDataVersion: GM_info.script.version,
     });
@@ -1076,6 +1107,395 @@ function othersDownloadMetadata(videoInfo: FullVideoInfo): void {
     downloadHandle.click();
     downloadHandle.remove();
     URL.revokeObjectURL(url);
+}
+
+/**
+ * 将视频元数据推送到 MediaCenter
+ * 流程：先 createMedia 创建媒体记录，再 updateMedia 更新完整元数据
+ * @param {FullVideoInfo} videoInfo - 视频信息对象
+ */
+async function pushToMediaCenter(videoInfo: FullVideoInfo): Promise<void> {
+    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) return;
+    const apiBase = config.mediaCenterApi.replace(/\/+$/, '');
+    const authHeaders = {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'authorization': `Bearer ${config.mediaCenterApiKey}`
+    };
+    const downloadPath = getDownloadPath(videoInfo);
+
+    try {
+        // 第一步：createMedia — 创建媒体记录（用 iwara 视频 ID 作为 fileHash 去重标识）
+        const createBody = prune({
+            filePath: downloadPath.fullPath,
+            fileHash: videoInfo.ID,
+            fileSize: videoInfo.Size,
+            mimeType: videoInfo.RAW?.file?.mime,
+        });
+        const createRes = await unlimitedFetch(`${apiBase}/api/media`, {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify(createBody)
+        });
+
+        if (!createRes.ok) {
+            originalConsole.warn(`[MediaCenter] createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`);
+            return;
+        }
+
+        const { media: created } = await createRes.json() as { media?: { id: string } };
+        if (!created?.id) {
+            originalConsole.warn(`[MediaCenter] createMedia returned no id for ${videoInfo.ID}`);
+            return;
+        }
+
+        // 第二步：updateMedia — 更新完整元数据
+        const updateBody = prune({
+            title: videoInfo.Title,
+            description: videoInfo.Description ?? '',
+            source: 'iwara',
+            author: videoInfo.Author || videoInfo.Alias,
+            tags: (videoInfo.Tags ?? []).map(t => t.id),
+            duration: videoInfo.RAW?.file?.duration,
+            mediaInfo: videoInfo.RAW ? JSON.stringify(videoInfo.RAW) : undefined,
+            fileName: videoInfo.FileName,
+            fileSize: videoInfo.Size,
+            mimeType: videoInfo.RAW?.file?.mime,
+            createdAt: new Date(videoInfo.UploadTime).toISOString(),
+        });
+        const updateRes = await unlimitedFetch(`${apiBase}/api/media/${created.id}`, {
+            method: 'PUT',
+            headers: authHeaders,
+            body: JSON.stringify(updateBody)
+        });
+
+        if (updateRes.ok) {
+            GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter metadata pushed:', videoInfo.ID, '→', created.id);
+        } else {
+            originalConsole.warn(`[MediaCenter] updateMedia failed for ${videoInfo.ID}: ${updateRes.status} ${await updateRes.text()}`);
+        }
+    } catch (error) {
+        originalConsole.warn(`[MediaCenter] Push metadata error for ${videoInfo.ID}:`, stringify(error));
+    }
+}
+
+/**
+ * 将浏览器数据库中缓存的视频元数据同步到 MediaCenter
+ * 分两阶段执行：
+ *   阶段一：遍历 IndexedDB，搜索 MediaCenter 匹配视频 ID，收集映射关系
+ *   阶段二：遍历匹配项，读取/解析完整元数据并更新到 MediaCenter
+ */
+export async function syncCachedToMediaCenter(): Promise<void> {
+    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) {
+        newToast(ToastType.Warn, {
+            node: toastNode(`请先配置 MediaCenter API 地址和密钥`, 'MediaCenter 同步'),
+            duration: 3000
+        }).show();
+        return;
+    }
+
+    const apiBase = config.mediaCenterApi.replace(/\/+$/, '');
+    const authHeaders = {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'authorization': `Bearer ${config.mediaCenterApiKey}`
+    };
+
+    const total = await db.countVideos();
+
+    if (total === 0) {
+        newToast(ToastType.Info, {
+            text: `没有找到缓存的视频数据`,
+            duration: 3000
+        }).show();
+        return;
+    }
+
+    // ── 阶段一：搜索 MediaCenter，匹配视频 ID ──
+    const matchedMap = new Map<string, string>(); // videoId → mediaCenterId
+    let searchProcessed = 0;
+    let searchErrors = 0;
+
+    const searchProgressNode = renderNode({
+        nodeType: 'p',
+        childs: `MediaCenter 搜索匹配中... [0/${total}] 匹配: 0`
+    });
+    const searchProgressToast = newToast(ToastType.Info, {
+        node: searchProgressNode,
+        duration: -1
+    });
+    searchProgressToast.show();
+
+    for await (const batch of db.iterateVideosBatched(512, (v) => v.ID !== '')) {
+        const concurrency = 8;
+        for (let i = 0; i < batch.length; i += concurrency) {
+            const chunk = batch.slice(i, i + concurrency);
+            await Promise.allSettled(chunk.map(async (video) => {
+                try {
+                    const searchRes = await unlimitedFetch(
+                        `${apiBase}/api/media?search=${encodeURIComponent(video.ID)}&limit=1`,
+                        { headers: authHeaders }
+                    );
+
+                    if (!searchRes.ok) {
+                        searchErrors++;
+                        return;
+                    }
+
+                    const { items } = await searchRes.json() as { items: Array<{ id: string }> };
+
+                    if (!isNullOrUndefined(items) && items.any()) {
+                        matchedMap.set(video.ID, items[0].id);
+                    }
+                } catch (error) {
+                    searchErrors++;
+                }
+            }));
+            searchProcessed += chunk.length;
+            searchProgressNode.firstChild!.textContent =
+                `MediaCenter 搜索匹配中... [${searchProcessed}/${total}] 匹配: ${matchedMap.size} 错误: ${searchErrors}`;
+            // chunk 之间间隔，避免占满浏览器并发连接池
+            await delay(100);
+        }
+    }
+
+    searchProgressToast.hide();
+
+    if (matchedMap.size === 0) {
+        newToast(ToastType.Info, {
+            text: `MediaCenter 中未找到匹配的视频记录`,
+            duration: 3000
+        }).show();
+        return;
+    }
+
+    // ── 阶段二：读取数据库、解析完整元数据并更新 MediaCenter ──
+    let updated = 0;
+    let skipped = 0;
+    let updateErrors = 0;
+
+    const updateProgressNode = renderNode({
+        nodeType: 'p',
+        childs: `MediaCenter 更新中... [0/${matchedMap.size}]`
+    });
+    const updateProgressToast = newToast(ToastType.Info, {
+        node: updateProgressNode,
+        duration: -1
+    });
+    updateProgressToast.show();
+
+    const matchedIds = [...matchedMap.keys()];
+    const concurrency = 10;
+    for (let i = 0; i < matchedIds.length; i += concurrency) {
+        const chunkIds = matchedIds.slice(i, i + concurrency);
+        await Promise.allSettled(chunkIds.map(async (videoId) => {
+            const mediaCenterId = matchedMap.get(videoId)!;
+            try {
+                let video = await db.getVideoById(videoId) ?? { Type: 'init', ID: videoId };
+                if (video.Type !== 'full') {
+                    const pvideo = await parseVideoInfo(video);
+                    video = getMoreCompleteVideoInfo(video, pvideo)
+                }
+
+                if (video.Type === 'cache' || video.Type === 'init') {
+                    skipped++;
+                    return;
+                }
+
+                db.putVideo(video);
+
+                const updateBody = prune({
+                    title: video.Title,
+                    description: video.RAW?.body ?? '',
+                    source: 'iwara',
+                    author: video.Author || video.Alias,
+                    tags: (video.Tags ?? []).map(t => t.id),
+                    duration: video.RAW?.file?.duration,
+                    mediaInfo: video.RAW ? JSON.stringify(video.RAW) : undefined,
+                    mimeType: video.RAW?.file?.mime,
+                    createdAt: new Date(video.UploadTime ?? video.RAW?.updatedAt ?? video.RAW?.createdAt ?? Date.now()).toISOString(),
+                });
+
+                const updateRes = await unlimitedFetch(`${apiBase}/api/media/${mediaCenterId}`, {
+                    method: 'PUT',
+                    headers: authHeaders,
+                    body: JSON.stringify(updateBody)
+                });
+
+                if (updateRes.ok) {
+                    updated++;
+                    GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter sync updated:', video.ID, '→', mediaCenterId);
+                } else {
+                    originalConsole.warn(`[MediaCenter] 更新失败 ${video.ID}: ${updateRes.status} ${await updateRes.text()}`);
+                    updateErrors++;
+                }
+            } catch (error) {
+                originalConsole.warn(`[MediaCenter] 同步异常 ${videoId}:`, stringify(error));
+                updateErrors++;
+            }
+        }));
+        updateProgressNode.firstChild!.textContent =
+            `MediaCenter 更新中... [${updated + skipped + updateErrors}/${matchedMap.size}] 更新: ${updated} 跳过: ${skipped} 错误: ${updateErrors}`;
+    }
+
+    updateProgressToast.hide();
+
+    newToast(ToastType.Info, {
+        text: `MediaCenter 同步完成！已更新: ${updated}, 跳过: ${skipped}, 错误: ${updateErrors}`,
+        duration: 5000,
+        close: true,
+        onClick() { this.hide(); }
+    }).show();
+}
+
+/**
+ * 抓取单页视频列表并缓存到 IndexedDB
+ * @returns true 表示成功(含空页)，false 表示请求失败，'last' 表示已是最后一页
+ */
+async function fetchAndCachePage(page: number): Promise<true | false | 'last'> {
+    const auth = await getAuth();
+    const response = await unlimitedFetch(
+        `https://${apiEndpoint}/videos?sort=date&page=${page}&limit=50`,
+        { headers: auth as any },
+        {
+            retry: true,
+            maxRetries: 3,
+            retryDelay: 3000,
+            failStatus: [403, 404, 429],
+            onRetry: async () => { await refreshToken(); },
+        }
+    );
+
+    if (!response.ok) return false;
+
+    const pageData = await response.json() as Iwara.IPage;
+    const rawVideos = pageData.results as Iwara.Video[];
+
+    // 判断是否还有下一页
+    if (pageData.page * pageData.limit >= pageData.count) return 'last';
+    if (isNullOrUndefined(rawVideos) || rawVideos.length === 0) return true;
+
+    // 解析并批量写入 DB（与 handleVideosResponse 一致）
+    const settled = await Promise.allSettled(
+        rawVideos.map(info => parseVideoInfo({ Type: 'cache', ID: info.id, RAW: info }))
+    );
+    const list = settled
+        .filter(i => i.status === 'fulfilled')
+        .map(i => (i as PromiseFulfilledResult<VideoInfo>).value)
+        .filter((v): v is PartialVideoInfo | FullVideoInfo => v.Type === 'partial' || v.Type === 'full');
+
+    if (list.length > 0) {
+        const ids = list.map(v => v.ID);
+        const existing = await db.getVideosByIds(ids);
+        const fullVideos = existing.filter(v => v.Type === 'full');
+        const toUpdate = list.difference(fullVideos, 'ID');
+        if (toUpdate.any()) {
+            await db.bulkPutVideos(toUpdate);
+            originalConsole.log(`update: ${toUpdate.length} ${toUpdate[0].Title}`)
+        }
+    }
+
+    return true;
+}
+
+/**
+ * 遍历 iwara 视频列表的所有页面，逐页抓取并通过 fetchAndCachePage 缓存到 IndexedDB
+ * 使用 unlimitedFetch（自动处理跨域）手动解析响应并写入数据库
+ * 每页请求间隔加入随机 jitter 避免触发限流
+ */
+export async function syncAllVideosPages(): Promise<void> {
+    if (!isLoggedIn()) {
+        newToast(ToastType.Warn, {
+            node: toastNode(`请先登录 iwara`, '页面遍历'),
+            duration: 3000
+        }).show();
+        return;
+    }
+
+    // 显示进度
+    const progressNode = renderNode({
+        nodeType: 'p',
+        childs: `正在遍历视频页面...`
+    });
+    const progressToast = newToast(ToastType.Info, {
+        node: progressNode,
+        duration: -1
+    });
+    progressToast.show();
+
+    let succeeded = 0;
+    const failedPages: number[] = [];
+    let page = 5800;
+
+    while (true) {
+        try {
+            const result = await fetchAndCachePage(page);
+
+            if (result === 'last') {
+                succeeded++;
+                progressNode.firstChild!.textContent = `正在遍历视频页面... 已是最后一页 (${page})，提前结束`;
+                break;
+            }
+
+            if (result === false) {
+                originalConsole.warn(`[SyncPages] 页面 ${page} 失败`);
+                failedPages.push(page);
+                await delay(5000 + Math.random() * 1000);
+                page++;
+                continue;
+            }
+
+            // true: 成功（含空页）
+            succeeded++;
+            progressNode.firstChild!.textContent = `正在遍历视频页面... 第 ${page} 页 (失败: ${failedPages.length})`;
+
+        } catch (error) {
+            originalConsole.warn(`[SyncPages] 页面 ${page} 异常:`, stringify(error));
+            failedPages.push(page);
+        }
+
+        await delay(500 + Math.random() * 1000);
+        page++;
+    }
+
+    // ── 重试失败的页面 ──
+    let retryFailed: number[] = [];
+    if (failedPages.length > 0) {
+        progressNode.firstChild!.textContent = `正在重试 ${failedPages.length} 个失败页面...`;
+
+        for (const retryPage of failedPages) {
+            try {
+                const result = await fetchAndCachePage(retryPage);
+
+                if (result === false) {
+                    originalConsole.warn(`[SyncPages] 重试页面 ${retryPage} 仍失败`);
+                    retryFailed.push(retryPage);
+                    continue;
+                }
+
+                succeeded++;
+                progressNode.firstChild!.textContent = `正在重试失败页面... ${retryPage} 成功 (剩余 ${failedPages.length - retryFailed.length - (failedPages.indexOf(retryPage) + 1 - retryFailed.length)} 个待重试)`;
+
+            } catch (error) {
+                originalConsole.warn(`[SyncPages] 重试页面 ${retryPage} 异常:`, stringify(error));
+                retryFailed.push(retryPage);
+            }
+
+            await delay(500 + Math.random() * 1000);
+        }
+    }
+
+    progressToast.hide();
+
+    newToast(ToastType.Info, {
+        text: `页面遍历完成！成功: ${succeeded} 页${retryFailed.length > 0 ? `，重试后仍失败: ${retryFailed.length} 页` : '，无失败'}`,
+        close: true,
+        onClick() { this.hide(); }
+    }).show();
+
+    if (retryFailed.length > 0) {
+        originalConsole.warn(`[SyncPages] 始终失败的页码: ${retryFailed.join(', ')}`);
+    }
 }
 
 export async function importConfig() {
@@ -1424,6 +1844,9 @@ export async function pushDownloadTask(videoInfo: VideoInfo) {
             switch (config.downloadType) {
                 case DownloadType.Aria2:
                     aria2Download(videoInfo)
+                    if (config.experimentalFeatures) {
+                        pushToMediaCenter(videoInfo)
+                    }
                     break
                 case DownloadType.Iwaradl:
                     iwaradlDownload(videoInfo)
