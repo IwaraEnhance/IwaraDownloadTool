@@ -1,15 +1,38 @@
 declare namespace Aria2 {
     interface IResult {
         id: string,
-        jsonrpc: string
+        jsonrpc: string,
+        error: undefined | string,
+        result?: any
     }
 
     interface StartsResult extends IResult {
         result: Array<Status>
     }
 
+    interface TellStatusResult extends IResult {
+        result: Status
+    }
+
     interface AuctionResult extends IResult {
         result: string
+    }
+
+    interface GlobalStatResult extends IResult {
+        result: {
+            downloadSpeed: string
+            numActive: string
+            numWaiting: string
+            numStopped: string
+            numStoppedTotal: string
+        }
+    }
+
+    interface GlobalOptionResult extends IResult {
+        result: {
+            'max-concurrent-downloads': string
+            [key: string]: string
+        }
     }
 
     interface Uri {

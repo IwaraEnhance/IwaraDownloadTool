@@ -10,7 +10,7 @@ import { originalAddEventListener, originalConsole, originalNodeAppendChild, ori
 import { Dictionary, GMSyncDictionary, Version } from "./class";
 import { db } from "./db";
 import { findElement, renderNode, unlimitedFetch } from "./extension";
-import { check, getAuth, newToast, syncAllVideosPages, syncCachedToMediaCenter, toastNode } from "./function";
+import { check, getAuth, newToast, syncAllVideosPages, syncCachedToMediaCenter, toastNode, trackExistingAria2Tasks } from "./function";
 import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui";
 import { PageType, ToastType, VersionState } from "./enum";
 import { createInterceptedFetch } from "./fetchInterceptor";
@@ -320,5 +320,8 @@ async function main() {
             }
         }
     ).show()
+
+    // 启动时接管现有 Aria2 任务的追踪（不阻塞启动流程）
+    trackExistingAria2Tasks();
 }
 (unsafeWindow.document.body ? Promise.resolve() : new Promise(resolve => originalAddEventListener.call(unsafeWindow.document, "DOMContentLoaded", resolve))).then(main)

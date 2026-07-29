@@ -39,7 +39,7 @@ interface IwaraDownloadToolDB extends DBSchema {
             'Type': string;
         };
     };
-    caches: {
+    idmap: {
         key: string;
         value: { ID: string, href: string };
         indexes: {
@@ -53,7 +53,7 @@ export class Database {
     private dbPromise: Promise<IDBPDatabase<IwaraDownloadToolDB>>;
 
     private constructor() {
-        this.dbPromise = openDB<IwaraDownloadToolDB>('IwaraDownloadTool', 20, {
+        this.dbPromise = openDB<IwaraDownloadToolDB>('IwaraDownloadTool', 22, {
             upgrade(db, oldVersion, newVersion, transaction) {
                 if (!db.objectStoreNames.contains('follows')) {
                     const followsStore = db.createObjectStore('follows', { keyPath: 'id' });
@@ -86,10 +86,19 @@ export class Database {
                     videosStore.createIndex('Type', 'Type');
                 }
 
-                // 检查并创建 caches 表（如果不存在）
-                if (!db.objectStoreNames.contains('caches')) {
-                    const cachesStore = db.createObjectStore('caches', { keyPath: 'ID' });
-                    cachesStore.createIndex('ID', 'ID', { unique: true });
+                // 检查并创建 idmap 表（如果不存在）
+                if (!db.objectStoreNames.contains('idmap')) {
+                    const idmapStore = db.createObjectStore('idmap', { keyPath: 'ID' });
+                    idmapStore.createIndex('ID', 'ID', { unique: true });
+                }
+
+                // 删除旧版 caches 表（v20 → v21），缓存数据会重新生成
+                if (oldVersion < 21 && db.objectStoreNames.contains('caches' as any)) {
+                    db.deleteObjectStore('caches' as any);
+                }
+                // 删除旧版 pairs 表（v21 → v22），缓存数据会重新生成
+                if (oldVersion < 22 && db.objectStoreNames.contains('pairs' as any)) {
+                    db.deleteObjectStore('pairs' as any);
                 }
             }
         });
@@ -118,10 +127,10 @@ export class Database {
         return db.transaction('videos', 'readwrite').objectStore('videos');
     }
 
-    // caches 表操作
-    public async caches() {
+    // idmap 表操作
+    public async idmap() {
         const db = await this.getDB();
-        return db.transaction('caches', 'readwrite').objectStore('caches');
+        return db.transaction('idmap', 'readwrite').objectStore('idmap');
     }
 
     // 便捷方法：获取 follows 表中的数据
@@ -142,9 +151,9 @@ export class Database {
         return store.getAll();
     }
 
-    // 便捷方法：获取 caches 表中的数据
-    public async getCaches() {
-        const store = await this.caches();
+    // 便捷方法：获取 idmap 表中的数据
+    public async getIdmap() {
+        const store = await this.idmap();
         return store.getAll();
     }
 
@@ -204,9 +213,84 @@ export class Database {
      * 按批次迭代 videos 表，每批次使用独立事务，防止事务因 yield 自动提交
      * @param batchSize 每批次记录数，默认 500
      * @param predicate 可选过滤回调
+     * @param sortBy 可选排序字段——使用数据库中已存在的索引名，如 'UploadTime'；未指定时按主键 ID 排序
      * @yields VideoInfo[] 每批次的记录数组
+     *
+     * @example
+     * // 按 UploadTime 升序遍历
+     * for await (const batch of db.iterateVideosBatched(200, undefined, 'UploadTime')) { ... }
+     *
+     * @example
+     * // 按 UploadTime 降序遍历（利用游标方向）
+     * for await (const batch of db.iterateVideosBatched(200, undefined, 'UploadTime', 'prev')) { ... }
      */
-    public async *iterateVideosBatched(batchSize: number = 500, predicate?: (video: VideoInfo) => boolean): AsyncGenerator<VideoInfo[], void, void> {
+    public async *iterateVideosBatched(
+        batchSize: number = 500,
+        predicate?: (video: VideoInfo) => boolean,
+        sortBy?: 'UploadTime' | 'ID',
+        direction: IDBCursorDirection = 'next',
+    ): AsyncGenerator<VideoInfo[], void, void> {
+        // 用于分页游标：同时记住 indexKey 和 primaryKey，以处理索引值重复的情况
+        let lastIndexKey: any = undefined;
+        let lastPrimaryKey: any = undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+            const db = await this.getDB();
+            const tx = db.transaction('videos', 'readonly');
+            const store = tx.store;
+            const source = sortBy ? store.index(sortBy) : store;
+
+            let cursor: any;
+
+            if (lastIndexKey !== undefined) {
+                if (direction === 'prev') {
+                    // 降序：用 upperBound 包含当前 key，然后跳过已处理过的记录
+                    const range = IDBKeyRange.upperBound(lastIndexKey, false);
+                    cursor = await source.openCursor(range, direction);
+                    // 跳过所有已处理过的记录（索引键相同且主键 >= 上一批最后一条的主键）
+                    while (cursor && cursor.key === lastIndexKey && cursor.primaryKey >= lastPrimaryKey) {
+                        cursor = await cursor.continue();
+                    }
+                } else {
+                    // 升序：用 lowerBound 包含当前 key，然后跳过已处理过的记录
+                    const range = IDBKeyRange.lowerBound(lastIndexKey, false);
+                    cursor = await source.openCursor(range, direction);
+                    // 跳过所有已处理过的记录（索引键相同且主键 <= 上一批最后一条的主键）
+                    while (cursor && cursor.key === lastIndexKey && cursor.primaryKey <= lastPrimaryKey) {
+                        cursor = await cursor.continue();
+                    }
+                }
+            } else {
+                cursor = await source.openCursor(null, direction);
+            }
+
+            const batch: VideoInfo[] = [];
+            while (cursor && batch.length < batchSize) {
+                const video = cursor.value as VideoInfo;
+                if (!predicate || predicate(video)) {
+                    batch.push(video);
+                }
+                lastIndexKey = cursor.key;
+                lastPrimaryKey = cursor.primaryKey;
+                cursor = await cursor.continue();
+            }
+
+            hasMore = cursor !== null;
+            // 事务在此 yield 后安全自动提交
+            yield batch;
+        }
+    }
+
+    /**
+     * 按批次仅迭代 videos 表的主键（视频 ID），不读取完整值。
+     * 使用 openKeyCursor 避免 structured clone 反序列化开销，比 iterateVideosBatched 快 10-100 倍。
+     * @param batchSize 每批次主键数量，默认 5000
+     * @yields string[] 每批次的视频 ID 数组
+     */
+    public async *iterateVideoKeysBatched(
+        batchSize: number = 5000,
+    ): AsyncGenerator<string[], void, void> {
         let lastKey: any = undefined;
         let hasMore = true;
 
@@ -217,23 +301,21 @@ export class Database {
 
             let cursor: any;
             if (lastKey !== undefined) {
-                cursor = await store.openCursor(IDBKeyRange.lowerBound(lastKey, true));
+                // 从上一批的最后一个主键之后开始（exclusive 边界）
+                const range = IDBKeyRange.lowerBound(lastKey, true);
+                cursor = await store.openKeyCursor(range, 'next');
             } else {
-                cursor = await store.openCursor();
+                cursor = await store.openKeyCursor(null, 'next');
             }
 
-            const batch: VideoInfo[] = [];
+            const batch: string[] = [];
             while (cursor && batch.length < batchSize) {
-                const video = cursor.value as VideoInfo;
-                if (!predicate || predicate(video)) {
-                    batch.push(video);
-                }
-                lastKey = cursor.key;
+                batch.push(cursor.primaryKey as string);
+                lastKey = cursor.primaryKey;
                 cursor = await cursor.continue();
             }
 
             hasMore = cursor !== null;
-            // 事务在此 yield 后安全自动提交
             yield batch;
         }
     }
@@ -307,6 +389,74 @@ export class Database {
         }
 
         return allVideos;
+    }
+
+    // ── MediaCenterID 与 IwaraID 映射表 ──
+
+    /**
+     * 获取 MediaCenterID 与 IwaraID 映射
+     */
+    public async getMediaCenterIdMap(videoId: string): Promise<string | undefined> {
+        const db = await this.getDB();
+        const entry = await db.get('idmap', videoId);
+        return entry?.href;
+    }
+
+    /**
+     * 设置 MediaCenterID 与 IwaraID 映射
+     */
+    public async putMediaCenterIdMap(videoId: string, mediaCenterId: string): Promise<void> {
+        const db = await this.getDB();
+        await db.put('idmap', { ID: videoId, href: mediaCenterId });
+    }
+
+    /**
+     * 批量设置 MediaCenterID 与 IwaraID 映射
+     */
+    public async bulkPutMediaCenterIdMaps(entries: Array<{ videoId: string; mediaCenterId: string }>): Promise<void> {
+        const db = await this.getDB();
+        const tx = db.transaction('idmap', 'readwrite');
+        const store = tx.store;
+        for (const { videoId, mediaCenterId } of entries) {
+            await store.put({ ID: videoId, href: mediaCenterId });
+        }
+        await tx.done;
+    }
+
+    /**
+     * 获取所有 MediaCenterID 与 IwaraID 映射
+     */
+    public async getAllMediaCenterIdMaps(): Promise<Map<string, string>> {
+        const db = await this.getDB();
+        const all = await db.getAll('idmap');
+        const map = new Map<string, string>();
+        for (const entry of all) {
+            map.set(entry.ID, entry.href);
+        }
+        return map;
+    }
+
+    /**
+     * 删除指定视频的 MediaCenterID 与 IwaraID 映射
+     */
+    public async deleteMediaCenterIdMap(videoId: string): Promise<void> {
+        const db = await this.getDB();
+        await db.delete('idmap', videoId);
+    }
+
+    /**
+     * 清除所有 MediaCenterID 与 IwaraID 映射
+     */
+    public async clearAllMediaCenterIdMaps(): Promise<void> {
+        const db = await this.getDB();
+        const tx = db.transaction('idmap', 'readwrite');
+        const store = tx.store;
+        let cursor = await store.openCursor();
+        while (cursor) {
+            await cursor.delete();
+            cursor = await cursor.continue();
+        }
+        await tx.done;
     }
 
     // 单例模式

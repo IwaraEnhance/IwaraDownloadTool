@@ -415,6 +415,16 @@
     z-index: 102;
 }
 
+.downloaded {
+    bottom: 46px;
+    right: 2px;
+    border-radius: 2px;
+    position: absolute;
+    padding: 3px 5px;
+    background-color: rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
 .follow {
     bottom: 24px;
     right: 2px;

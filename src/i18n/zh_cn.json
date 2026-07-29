@@ -108,6 +108,7 @@
     "findedDownloadLink": "发现疑似第三方网盘下载地址!",
     "allCompleted": "全部解析完成！",
     "following": "已关注",
+    "downloaded": "已下载",
     "parsingProgress": "解析进度: ",
     "manualDownloadTips": "单独下载请直接在此处输入视频ID, 批量下载请提供使用“|”分割的视频ID, 例如: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "没有可供下载的视频源",

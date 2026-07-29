@@ -404,32 +404,36 @@ export async function iwaradlCheck(): Promise<boolean> {
     }
     return true
 }
+/** 从视频信息构建带 videoid/download 参数的下载 URL */
+function buildDownloadUrl(videoInfo: FullVideoInfo): URL {
+    const localPath = getDownloadPath(videoInfo);
+    const url = videoInfo.DownloadUrl.toURL();
+    url.searchParams.set('videoid', videoInfo.ID);
+    url.searchParams.set('download', localPath.fullName);
+    return url;
+}
+
 /**
  * 通过Aria2下载视频
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean | undefined = undefined) {
-    let localPath = getDownloadPath(videoInfo)
-    let downloadUrl = videoInfo.DownloadUrl.toURL()
-    downloadUrl.searchParams.set('videoid', videoInfo.ID)
-    downloadUrl.searchParams.set('download', localPath.fullName)
-    let params = [
-        [downloadUrl.href],
-        prune({
-            'allow-overwrite': overwrite,
-            'all-proxy': config.downloadProxy,
-            'all-proxy-passwd': !config.downloadProxy.isEmpty() ? config.downloadProxyPassword : undefined,
-            'all-proxy-user': !config.downloadProxy.isEmpty() ? config.downloadProxyUsername : undefined,
-            'out': localPath.fullName,
-            'dir': localPath.directory,
-            'referer': window.location.hostname,
-            'header': [
-                'Cookie:' + unsafeWindow.document.cookie
-            ]
-        })
-    ]
+    const downloadUrl = buildDownloadUrl(videoInfo);
+    const localPath = getDownloadPath(videoInfo);
+    const downloadParams = prune({
+        'allow-overwrite': true,
+        'all-proxy': config.downloadProxy,
+        'all-proxy-passwd': !config.downloadProxy.isEmpty() ? config.downloadProxyPassword : undefined,
+        'all-proxy-user': !config.downloadProxy.isEmpty() ? config.downloadProxyUsername : undefined,
+        'out': localPath.fullName,
+        'dir': localPath.directory,
+        'referer': window.location.hostname,
+        'header': [
+            'Cookie:' + unsafeWindow.document.cookie
+        ]
+    })
     try {
-        let res = await aria2API('aria2.addUri', params) as Aria2.AuctionResult
+        let res = await aria2API('aria2.addUri', [[downloadUrl.href], downloadParams]) as Aria2.AuctionResult
         if (res.result.isEmpty()) throw `aria2 下载失败：${stringify(res)}`
         newToast(
             ToastType.Info,
@@ -438,6 +442,8 @@ export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean
                 node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
             }
         ).show()
+        // 后台持续追踪任务状态：异常自动重试，完成后推送到 MediaCenter
+        trackAria2Task(videoInfo, res.result, downloadParams);
     } catch (error) {
         newToast(
             ToastType.Info,
@@ -448,6 +454,180 @@ export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean
         ).show()
     }
 }
+
+/** 后台追踪单个 Aria2 下载任务，异常自动重试，完成后推送到 MediaCenter */
+async function trackAria2Task(
+    videoInfo: FullVideoInfo,
+    gid: string,
+    downloadParams: Record<string, any>,
+): Promise<void> {
+    let currentGid = gid;
+    let consecutiveErrors = 0;
+
+    while (true) {
+        await delay(1000 * 10);
+        try {
+            const statusRes = await aria2API('aria2.tellStatus', [
+                currentGid,
+                ['gid', 'status', 'files', 'downloadSpeed', 'errorCode'],
+            ]) as Aria2.TellStatusResult;
+            const task = statusRes.result;
+
+            if (!task?.status) {
+                consecutiveErrors++;
+                if (consecutiveErrors > 3) {
+                    originalConsole.warn(`[Aria2Track] 任务 ${currentGid} 持续无响应，放弃追踪`);
+                    return;
+                }
+                continue;
+            }
+            consecutiveErrors = 0;
+
+            switch (task.status) {
+                case 'complete':
+                    GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${videoInfo.ID} 下载完成`);
+                    if (config.experimentalFeatures) {
+                        await pushToMediaCenter(videoInfo);
+                    }
+                    return; // 完成，退出追踪
+
+                case 'error':
+                case 'removed':
+                    originalConsole.warn(`[Aria2Track] ${videoInfo.ID} 任务 ${task.status}，重新创建下载`);
+                    try {
+                        const freshInfo = await parseVideoInfo({ Type: 'init', ID: videoInfo.ID });
+                        if (freshInfo.Type === 'full') {
+                            videoInfo = freshInfo
+                            const newRes = await aria2API('aria2.addUri', [[buildDownloadUrl(freshInfo).href], downloadParams]) as Aria2.AuctionResult;
+                            if (!newRes?.result?.isEmpty()) {
+                                currentGid = newRes.result;
+                            }
+                        }
+                    } catch { /* fall through, will retry next poll */ }
+                    break;
+
+                case 'active':
+                    if (isConvertibleToNumber(task.downloadSpeed) && Number(task.downloadSpeed) <= 512) {
+                        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${videoInfo.ID} 速度过慢，重启`);
+                        const freshActive = await restartAria2Task(currentGid, videoInfo.ID, task);
+                        if (freshActive) videoInfo = freshActive;
+                    }
+                    break;
+
+                case 'waiting':
+                    // 等待中，继续轮询
+                    break;
+
+                case 'paused':
+                    if (await isAria2QueueFull()) {
+                        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${videoInfo.ID} 队列已满，暂不重启`);
+                    } else {
+                        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${videoInfo.ID} 已暂停，重启`);
+                        const freshPaused = await restartAria2Task(currentGid, videoInfo.ID, task);
+                        if (freshPaused) videoInfo = freshPaused;
+                    }
+                    break;
+            }
+        } catch (error) {
+            originalConsole.warn(`[Aria2Track] 追踪异常 ${currentGid}:`, stringify(error));
+            consecutiveErrors++;
+            if (consecutiveErrors > 5) return;
+        }
+    }
+}
+
+/** 获取 aria2 全局统计与最大并发数，判断下载队列是否已满 */
+async function isAria2QueueFull(): Promise<boolean> {
+    try {
+        const [statRes, optRes] = await Promise.all([
+            aria2API('aria2.getGlobalStat', []),
+            aria2API('aria2.getGlobalOption', []),
+        ]);
+        const numActive = parseInt((statRes as Aria2.GlobalStatResult).result?.numActive ?? '0', 10);
+        const maxConcurrent = parseInt((optRes as Aria2.GlobalOptionResult).result?.['max-concurrent-downloads'] ?? '5', 10);
+        return numActive >= maxConcurrent;
+    } catch {
+        return false;
+    }
+}
+
+/** 重启单个 Aria2 任务：重新解析下载地址 → 刷新链接 → 恢复，返回最新视频信息 */
+async function restartAria2Task(gid: string, videoId: string, task: Aria2.Status): Promise<FullVideoInfo | undefined> {
+    try {
+        const freshInfo = await parseVideoInfo({ Type: 'init', ID: videoId });
+        if (freshInfo.Type !== 'full') {
+            originalConsole.warn(`[Aria2Track] restartAria2Task ${videoId} 重新解析失败 (${freshInfo.Type})`);
+            return undefined;
+        }
+        const oldUris = (task.files?.[0]?.uris ?? []).map((u: any) => u.uri);
+        await aria2API('aria2.changeUri', [gid, 1, oldUris, [buildDownloadUrl(freshInfo).href]]);
+        await aria2API('aria2.unpause', [gid]);
+        return freshInfo;
+    } catch (error) {
+        originalConsole.warn(`[Aria2Track] restartAria2Task 失败 ${gid}:`, stringify(error));
+        return undefined;
+    }
+}
+
+/**
+ * 脚本启动时扫描所有现有 Aria2 任务，对未建立 idmap 映射的任务启动后台追踪。
+ * 仅当下载模式为 Aria2 时有效。
+ */
+export async function trackExistingAria2Tasks(): Promise<void> {
+    if (config.downloadType !== DownloadType.Aria2) return;
+
+    try {
+        const [actRes, stopRes] = await Promise.all([
+            aria2API('aria2.tellActive', [['gid', 'status', 'files', 'bittorrent']]),
+            aria2API('aria2.tellStopped', [0, 4096, ['gid', 'status', 'files', 'bittorrent']]),
+        ]);
+        const activeRes = actRes as Aria2.StartsResult;
+        const stoppedRes = stopRes as Aria2.StartsResult;
+
+        const allTasks = [...(activeRes.result ?? []), ...(stoppedRes.result ?? [])]
+            .filter(t => isNullOrUndefined(t.bittorrent));
+
+        for (const task of allTasks) {
+            const videoId = aria2TaskExtractVideoID(task);
+            if (isNullOrUndefined(videoId) || videoId.isEmpty()) continue;
+
+            // 已有 idmap 映射说明之前已追踪过 / 已推送到 MediaCenter
+            const existingMapping = await db.getMediaCenterIdMap(videoId);
+            if (!isNullOrUndefined(existingMapping) && !existingMapping.isEmpty()) continue;
+
+            // 优先从本地数据库获取视频信息，仅 partial 时补解析为 full
+            let info: VideoInfo | undefined = await db.getVideoById(videoId);
+            if (!info || info.Type === 'cache' || info.Type === 'init' || info.Type === 'fail') {
+                info = await parseVideoInfo({ Type: 'init', ID: videoId });
+            } else if (info.Type === 'partial') {
+                // partial 缺少下载地址等字段，补解析为 full
+                info = await parseVideoInfo(info);
+            }
+            if (info.Type !== 'full') {
+                originalConsole.warn(`[Aria2Track] 启动追踪 ${videoId} 解析失败 (${info.Type})，跳过`);
+                continue;
+            }
+
+            const localPath = getDownloadPath(info);
+            const downloadParams = prune({
+                'allow-overwrite': true,
+                'all-proxy': config.downloadProxy,
+                'all-proxy-passwd': !config.downloadProxy.isEmpty() ? config.downloadProxyPassword : undefined,
+                'all-proxy-user': !config.downloadProxy.isEmpty() ? config.downloadProxyUsername : undefined,
+                'out': localPath.fullName,
+                'dir': localPath.directory,
+                'referer': window.location.hostname,
+                'header': ['Cookie:' + unsafeWindow.document.cookie],
+            });
+
+            GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] 启动时接管现有任务 ${videoId} (gid=${task.gid})`);
+            trackAria2Task(info, task.gid, downloadParams);
+        }
+    } catch (error) {
+        originalConsole.warn('[Aria2Track] 启动时扫描现有任务失败:', stringify(error));
+    }
+}
+
 /**
  * 通过iwaradl下载视频
  * @param {FullVideoInfo} videoInfo - 视频信息对象
@@ -693,6 +873,7 @@ export async function aria2TaskCheckAndRestart() {
         let downloadCompleted: Array<{ id: string, data: Aria2.Status }> = stoped.filter(
             (task: { id: string, data: Aria2.Status }) => task.data.status === 'complete' //|| task.data.errorCode === '13'
         ).unique('id');
+        //downloadCompleted = [];
         let downloadUncompleted: Array<{ id: string, data: Aria2.Status }> = stoped.difference(downloadCompleted, 'id').difference(downloadNormalTasks, 'id');
         let downloadToSlowTasks: Array<{ id: string, data: Aria2.Status }> = active.filter(
             (task: { id: string, data: Aria2.Status }) => isConvertibleToNumber(task.data.downloadSpeed) && Number(task.data.downloadSpeed) <= 512
@@ -717,13 +898,14 @@ export async function aria2TaskCheckAndRestart() {
                                 Type: "init",
                                 ID: task.id
                             })
+
                             if (info.Type != 'full') {
                                 newToast(
                                     ToastType.Error,
                                     {
                                         node:
                                             toastNode([
-                                                `${info.RAW?.title}[${info.ID}] %#parsingFailed#%`
+                                                `${info.Title}[${info.ID}] %#parsingFailed#%`
                                             ], '%#aria2TaskCheck#%'),
                                         onClick() {
                                             this.hide()
@@ -732,14 +914,62 @@ export async function aria2TaskCheckAndRestart() {
                                 ).show()
                                 continue
                             }
+
                             try {
-                                aria2Download(info, true)
-                                let activeTasks = active.filter(
-                                    (activeTask: { id: string, data: Aria2.Status }) => activeTask.id === task.id
-                                )
-                                for (let t = 0; t < activeTasks.length; t++) {
-                                    const element = activeTasks[t];
-                                    await aria2API('aria2.forceRemove', [element.data.gid])
+                                GM_getValue('isDebug') && originalConsole.debug(`[Debug] aria2TaskCheckAndRestart: 处理任务 ${task.data.gid} 状态 ${task.data.status}`, task.data);
+
+                                switch (task.data.status) {
+                                    case "waiting":
+                                    case 'active':
+                                        GM_getValue('isDebug') && originalConsole.debug(`[Debug] aria2TaskCheckAndRestart: 暂停活跃任务 ${task.data.gid}`);
+                                        const pauseRes = await aria2API('aria2.forcePause', [task.data.gid]) as Aria2.AuctionResult;
+                                        if (pauseRes.error) {
+                                            originalConsole.warn(`[aria2TaskCheckAndRestart] forcePause 失败 ${task.data.gid}:`, pauseRes.error);
+                                            break;
+                                        }
+                                    case "paused":
+                                        let localPath = getDownloadPath(info)
+                                        let downloadUrl = info.DownloadUrl.toURL()
+                                        downloadUrl.searchParams.set('videoid', info.ID)
+                                        downloadUrl.searchParams.set('download', localPath.fullName)
+                                        // 获取旧 URIs
+                                        const oldUris = (task.data.files?.[0]?.uris ?? []).map(u => u.uri)
+                                        GM_getValue('isDebug') && originalConsole.debug(
+                                            `[Debug] aria2TaskCheckAndRestart: 替换 URIs - 任务 ${task.data.gid}`,
+                                            { oldUris, newUrl: downloadUrl.href }
+                                        )
+                                        // 替换 URIs
+                                        const changeRes = await aria2API('aria2.changeUri', [
+                                            task.data.gid,
+                                            1,
+                                            oldUris,
+                                            [downloadUrl.href]
+                                        ]) as Aria2.AuctionResult;
+                                        if (changeRes.error) {
+                                            originalConsole.warn(`[aria2TaskCheckAndRestart] changeUri 失败 ${task.data.gid}:`, changeRes.error);
+                                            break;
+                                        }
+                                        GM_getValue('isDebug') && originalConsole.debug(`[Debug] aria2TaskCheckAndRestart: changeUri 返回`, changeRes.result);
+                                        // 恢复下载
+                                        GM_getValue('isDebug') && originalConsole.debug(`[Debug] aria2TaskCheckAndRestart: 恢复下载 ${task.data.gid}`);
+                                        const unpauseRes = await aria2API('aria2.unpause', [task.data.gid]) as Aria2.AuctionResult;
+                                        if (unpauseRes.error) {
+                                            originalConsole.warn(`[aria2TaskCheckAndRestart] unpause 失败 ${task.data.gid}:`, unpauseRes.error);
+                                            break;
+                                        }
+
+                                        newToast(ToastType.Info, {
+                                            gravity: 'bottom',
+                                            node: toastNode(`${info.Title}[${info.ID}] %#pushTaskSucceed#%`)
+                                        }).show()
+                                        break;
+                                    case "complete":
+                                    case "error":
+                                    case "removed":
+                                        aria2Download(info, true)
+                                        break;
+                                    default:
+                                        break;
                                 }
                             } catch (error) {
                                 newToast(
@@ -747,7 +977,7 @@ export async function aria2TaskCheckAndRestart() {
                                     {
                                         node:
                                             toastNode([
-                                                `${info.RAW?.title}[${info.ID}] %#pushTaskFail#%`,
+                                                `${info.RAW?.title ?? info.Title}[${info.ID}] %#pushTaskFail#%`,
                                                 { nodeType: 'br' },
                                                 stringify(error)
                                             ], '%#aria2TaskCheck#%'),
@@ -1114,8 +1344,8 @@ function othersDownloadMetadata(videoInfo: FullVideoInfo): void {
  * 流程：先 createMedia 创建媒体记录，再 updateMedia 更新完整元数据
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
-async function pushToMediaCenter(videoInfo: FullVideoInfo): Promise<void> {
-    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) return;
+async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId: string | undefined = undefined): Promise<boolean> {
+    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) return false;
     const apiBase = config.mediaCenterApi.replace(/\/+$/, '');
     const authHeaders = {
         'accept': 'application/json',
@@ -1125,64 +1355,98 @@ async function pushToMediaCenter(videoInfo: FullVideoInfo): Promise<void> {
     const downloadPath = getDownloadPath(videoInfo);
 
     try {
-        // 第一步：createMedia — 创建媒体记录（用 iwara 视频 ID 作为 fileHash 去重标识）
-        const createBody = prune({
-            filePath: downloadPath.fullPath,
-            fileHash: videoInfo.ID,
-            fileSize: videoInfo.Size,
-            mimeType: videoInfo.RAW?.file?.mime,
-        });
-        const createRes = await unlimitedFetch(`${apiBase}/api/media`, {
-            method: 'POST',
-            headers: authHeaders,
-            body: JSON.stringify(createBody)
-        });
 
-        if (!createRes.ok) {
-            originalConsole.warn(`[MediaCenter] createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`);
-            return;
-        }
+        if (isNullOrUndefined(mediaCenterId) || mediaCenterId.isEmpty()) {
+            // 第一步：createMedia — 创建媒体记录（用 iwara 视频 ID 作为 fileHash 去重标识）
+            const createBody = prune({
+                filePath: downloadPath.fullPath,
+                fileHash: videoInfo.ID
+            });
+            const createRes = await unlimitedFetch(`${apiBase}/api/media`, {
+                method: 'POST',
+                headers: authHeaders,
+                body: JSON.stringify(createBody)
+            });
 
-        const { media: created } = await createRes.json() as { media?: { id: string } };
-        if (!created?.id) {
-            originalConsole.warn(`[MediaCenter] createMedia returned no id for ${videoInfo.ID}`);
-            return;
+            if (createRes.status === 409) {
+                // fileHash 重复，已有记录
+                const conflict = await createRes.json() as { error: string; existingId?: string; existingTitle?: string };
+                if (conflict.existingId && !conflict.existingId.isEmpty()) {
+                    mediaCenterId = conflict.existingId;
+                    await db.putMediaCenterIdMap(videoInfo.ID, mediaCenterId);
+                    GM_getValue('isDebug') && originalConsole.debug(`[MediaCenter] createMedia 409, reuse existing ${videoInfo.ID} → ${mediaCenterId}`);
+                } else {
+                    originalConsole.warn(`[MediaCenter] createMedia 409 but no existingId for ${videoInfo.ID}: ${conflict.error}`);
+                    return false;
+                }
+            } else if (!createRes.ok) {
+                originalConsole.warn(`[MediaCenter] createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`);
+                return false;
+            } else {
+                // 201 Created 成功：{ message: 'media.importSuccess', id }
+                const createResult = await createRes.json() as { message?: string; error?: string; id?: string };
+                if (createResult.error) {
+                    originalConsole.warn(`[MediaCenter] createMedia error for ${videoInfo.ID}: ${createResult.error}`);
+                    return false;
+                }
+                if (!createResult.id || createResult.id.isEmpty()) {
+                    originalConsole.warn(`[MediaCenter] createMedia returned no id for ${videoInfo.ID}`);
+                    return false;
+                }
+
+                mediaCenterId = createResult.id;
+                await db.putMediaCenterIdMap(videoInfo.ID, mediaCenterId);
+            }
         }
 
         // 第二步：updateMedia — 更新完整元数据
         const updateBody = prune({
+            filePath: downloadPath.fullPath,
+            fileHash: videoInfo.ID,
             title: videoInfo.Title,
             description: videoInfo.Description ?? '',
             source: 'iwara',
             author: videoInfo.Author || videoInfo.Alias,
             tags: (videoInfo.Tags ?? []).map(t => t.id),
             duration: videoInfo.RAW?.file?.duration,
-            mediaInfo: videoInfo.RAW ? JSON.stringify(videoInfo.RAW) : undefined,
-            fileName: videoInfo.FileName,
-            fileSize: videoInfo.Size,
-            mimeType: videoInfo.RAW?.file?.mime,
+            sourceMeta: videoInfo.RAW ? JSON.stringify(videoInfo.RAW) : undefined,
             createdAt: new Date(videoInfo.UploadTime).toISOString(),
         });
-        const updateRes = await unlimitedFetch(`${apiBase}/api/media/${created.id}`, {
+        const updateRes = await unlimitedFetch(`${apiBase}/api/media/${mediaCenterId}`, {
             method: 'PUT',
             headers: authHeaders,
             body: JSON.stringify(updateBody)
         });
 
-        if (updateRes.ok) {
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter metadata pushed:', videoInfo.ID, '→', created.id);
-        } else {
+        if (!updateRes.ok) {
             originalConsole.warn(`[MediaCenter] updateMedia failed for ${videoInfo.ID}: ${updateRes.status} ${await updateRes.text()}`);
+            return false;
         }
+
+        // 校验响应体：服务端成功时返回 { message: 'media.updateSuccess', media: {...} }
+        const updateResult = await updateRes.json() as { message?: string; error?: string; media?: Record<string, unknown> };
+        if (updateResult.error) {
+            originalConsole.warn(`[MediaCenter] updateMedia error for ${videoInfo.ID}: ${updateResult.error}`);
+            return false;
+        }
+        if (!updateResult.media) {
+            originalConsole.warn(`[MediaCenter] updateMedia returned no media for ${videoInfo.ID}`);
+            return false;
+        }
+
+        GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter metadata pushed:', videoInfo.ID, '→', mediaCenterId);
+        return true;
     } catch (error) {
         originalConsole.warn(`[MediaCenter] Push metadata error for ${videoInfo.ID}:`, stringify(error));
     }
+
+    return false;
 }
 
 /**
  * 将浏览器数据库中缓存的视频元数据同步到 MediaCenter
  * 分两阶段执行：
- *   阶段一：遍历 IndexedDB，搜索 MediaCenter 匹配视频 ID，收集映射关系
+ *   阶段一：从 MediaCenter 拉取全部视频列表，通过 title 匹配 iwara 视频 ID 建立映射
  *   阶段二：遍历匹配项，读取/解析完整元数据并更新到 MediaCenter
  */
 export async function syncCachedToMediaCenter(): Promise<void> {
@@ -1211,65 +1475,182 @@ export async function syncCachedToMediaCenter(): Promise<void> {
         return;
     }
 
-    // ── 阶段一：搜索 MediaCenter，匹配视频 ID ──
-    const matchedMap = new Map<string, string>(); // videoId → mediaCenterId
-    let searchProcessed = 0;
-    let searchErrors = 0;
+    // ── 阶段一：从 MediaCenter 拉取全部视频列表，通过 title 匹配 iwara 视频 ID 建立映射 ──
+    const phaseStartTime = Date.now();
+    let stepStartTime = phaseStartTime;
 
-    const searchProgressNode = renderNode({
+    const matchedMap = await db.getAllMediaCenterIdMaps(); // 先加载本地已有的映射缓存
+    originalConsole.debug(`[MediaCenter] 步骤1/4 加载本地映射缓存: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
+    stepStartTime = Date.now();
+
+    const listProgressNode = renderNode({
         nodeType: 'p',
-        childs: `MediaCenter 搜索匹配中... [0/${total}] 匹配: 0`
+        childs: `正在从 MediaCenter 拉取视频列表...`
     });
-    const searchProgressToast = newToast(ToastType.Info, {
-        node: searchProgressNode,
+    const listProgressToast = newToast(ToastType.Info, {
+        node: listProgressNode,
         duration: -1
     });
-    searchProgressToast.show();
+    listProgressToast.show();
 
-    for await (const batch of db.iterateVideosBatched(512, (v) => v.ID !== '')) {
-        const concurrency = 8;
-        for (let i = 0; i < batch.length; i += concurrency) {
-            const chunk = batch.slice(i, i + concurrency);
-            await Promise.allSettled(chunk.map(async (video) => {
-                try {
-                    const searchRes = await unlimitedFetch(
-                        `${apiBase}/api/media?search=${encodeURIComponent(video.ID)}&limit=1`,
-                        { headers: authHeaders }
-                    );
+    try {
+        const listUrl = `${apiBase}/api/media?limit=0&sortBy=createdAt&sortOrder=desc`;
+        const response = await unlimitedFetch(listUrl, { headers: authHeaders });
 
-                    if (!searchRes.ok) {
-                        searchErrors++;
-                        return;
-                    }
-
-                    const { items } = await searchRes.json() as { items: Array<{ id: string }> };
-
-                    if (!isNullOrUndefined(items) && items.any()) {
-                        matchedMap.set(video.ID, items[0].id);
-                    }
-                } catch (error) {
-                    searchErrors++;
-                }
-            }));
-            searchProcessed += chunk.length;
-            searchProgressNode.firstChild!.textContent =
-                `MediaCenter 搜索匹配中... [${searchProcessed}/${total}] 匹配: ${matchedMap.size} 错误: ${searchErrors}`;
-            // chunk 之间间隔，避免占满浏览器并发连接池
-            await delay(100);
+        if (!response.ok) {
+            throw new Error(`拉取 MediaCenter 列表失败: ${response.status} ${await response.text()}`);
         }
+
+        const result = await response.json();
+        const items: Array<{ id: string; fileHash?: string; title?: string }> = result.items;
+
+        originalConsole.debug(`[MediaCenter] 步骤2/4 拉取 MediaCenter 列表: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${items.length} 条）`);
+        stepStartTime = Date.now();
+
+        listProgressNode.firstChild!.textContent =
+            `MediaCenter 列表拉取完成，共 ${items.length} 条记录，正在遍历本地数据库建立映射...`;
+
+        const entriesToSave: Array<{ videoId: string; mediaCenterId: string }> = [];
+        let processedCount = 0;
+
+        // ── 预建查找索引：避免每视频 O(n) 扫描 items ──
+        const hashToId = new Map<string, string>();
+        const tokenToId = new Map<string, string>();
+        const titleContains: Array<{ id: string; lowerTitle: string }> = [];
+        for (const m of items) {
+            if (!isNullOrUndefined(m.fileHash) && !m.fileHash.isEmpty()) {
+                hashToId.set(m.fileHash, m.id);
+            }
+            if (!isNullOrUndefined(m.title) && !m.title.isEmpty()) {
+                const lowerTitle = m.title.toLowerCase();
+                titleContains.push({ id: m.id, lowerTitle });
+                for (const token of lowerTitle.split(/[^a-z0-9]+/).filter(t => t.length >= 3)) {
+                    if (!tokenToId.has(token)) tokenToId.set(token, m.id);
+                }
+            }
+        }
+
+        // 使用轻量级键遍历（只读视频 ID，不反序列化整个对象）
+        const keyIterator = db.iterateVideoKeysBatched(10240);
+        let idx = 0;
+        let currentBatch: string[] = [];
+        let keyBatchIter = keyIterator[Symbol.asyncIterator]();
+        let prefetchDone = false;
+        let prefetchPromise: Promise<void> | null = null;
+        const batchQueue: string[][] = [];
+
+        const prefetchNextBatch = async (): Promise<void> => {
+            const t0 = Date.now();
+            const { value, done } = await keyBatchIter.next();
+            originalConsole.debug(`[MediaCenter] 批次获取: ${((Date.now() - t0) / 1000).toFixed(1)}s（${value?.length ?? 0} 条）`);
+            if (done) {
+                prefetchDone = true;
+            } else {
+                batchQueue.push(value);
+            }
+        };
+
+        const ensureBatch = async (): Promise<boolean> => {
+            if (batchQueue.length > 0) return true;
+            if (prefetchDone) return false;
+            if (!prefetchPromise) {
+                prefetchPromise = prefetchNextBatch().finally(() => { prefetchPromise = null; });
+            }
+            await prefetchPromise;
+            return batchQueue.length > 0;
+        };
+
+        // 启动第一批预取
+        prefetchPromise = prefetchNextBatch().finally(() => { prefetchPromise = null; });
+
+        const nextVideo = async (): Promise<void> => {
+            if (idx >= currentBatch.length) {
+                if (!await ensureBatch()) return;
+                currentBatch = batchQueue.shift()!;
+                idx = 0;
+                if (batchQueue.length < 2 && !prefetchDone && !prefetchPromise) {
+                    prefetchPromise = prefetchNextBatch().finally(() => { prefetchPromise = null; });
+                }
+            }
+            const videoId = currentBatch[idx++];
+            processedCount++;
+            if (Date.now() - stepStartTime >= 500 || processedCount === 1 || processedCount === total) {
+                listProgressNode.firstChild!.textContent =
+                    `正在匹配映射... [${processedCount}/${total}] 已映射: ${matchedMap.size}`;
+            }
+            if (matchedMap.has(videoId)) return nextVideo();
+
+            // 1) fileHash 精确匹配 O(1)
+            if (hashToId.has(videoId)) {
+                const mcId = hashToId.get(videoId)!;
+                matchedMap.set(videoId, mcId);
+                entriesToSave.push({ videoId, mediaCenterId: mcId });
+                return nextVideo();
+            }
+
+            // 2) title token 快速命中 O(1)
+            const videoIdLower = videoId.toLowerCase();
+            if (tokenToId.has(videoIdLower)) {
+                const mcId = tokenToId.get(videoIdLower)!;
+                matchedMap.set(videoId, mcId);
+                entriesToSave.push({ videoId, mediaCenterId: mcId });
+                return nextVideo();
+            }
+
+            // 3) 回退：title 包含匹配（仅 token 未命中的极少数情况）
+            for (const tc of titleContains) {
+                if (tc.lowerTitle.indexOf(videoIdLower) !== -1) {
+                    matchedMap.set(videoId, tc.id);
+                    entriesToSave.push({ videoId, mediaCenterId: tc.id });
+                    break;
+                }
+            }
+
+            return nextVideo();
+        };
+        await Promise.allSettled(
+            Array.from({ length: Math.min(64, total) }, () => nextVideo())
+        );
+
+        originalConsole.debug(`[MediaCenter] 步骤3/4 遍历数据库匹配映射: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${processedCount} 条，映射 ${entriesToSave.length} 条）`);
+        stepStartTime = Date.now();
+
+        if (entriesToSave.length > 0) {
+            await db.bulkPutMediaCenterIdMaps(entriesToSave);
+        }
+
+        originalConsole.debug(`[MediaCenter] 步骤4/4 保存映射到本地: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
+        const totalTime = (Date.now() - phaseStartTime) / 1000;
+
+        listProgressNode.firstChild!.textContent =
+            `映射建立完成，共 ${matchedMap.size} 条映射（新增 ${entriesToSave.length} 条），总耗时 ${totalTime.toFixed(1)}s`;
+    } catch (error) {
+        originalConsole.error('[MediaCenter] 拉取列表失败:', stringify(error));
+        listProgressToast.hide();
+        newToast(ToastType.Error, {
+            node: toastNode([
+                `MediaCenter 列表拉取失败，请检查 API 地址和密钥`,
+                { nodeType: 'br' },
+                stringify(error)
+            ], 'MediaCenter 同步'),
+            duration: 10000,
+            close: true,
+            onClick() { this.hide(); }
+        }).show();
+        return;
     }
 
-    searchProgressToast.hide();
+    listProgressToast.hide();
 
     if (matchedMap.size === 0) {
         newToast(ToastType.Info, {
-            text: `MediaCenter 中未找到匹配的视频记录`,
+            text: `MediaCenter 中未找到包含 fileHash 的视频记录，无法同步`,
             duration: 3000
         }).show();
         return;
     }
 
-    // ── 阶段二：读取数据库、解析完整元数据并更新 MediaCenter ──
+    // ── 阶段二：遍历匹配项，解析完整元数据并更新到 MediaCenter ──
     let updated = 0;
     let skipped = 0;
     let updateErrors = 0;
@@ -1285,58 +1666,43 @@ export async function syncCachedToMediaCenter(): Promise<void> {
     updateProgressToast.show();
 
     const matchedIds = [...matchedMap.keys()];
-    const concurrency = 10;
-    for (let i = 0; i < matchedIds.length; i += concurrency) {
-        const chunkIds = matchedIds.slice(i, i + concurrency);
-        await Promise.allSettled(chunkIds.map(async (videoId) => {
-            const mediaCenterId = matchedMap.get(videoId)!;
-            try {
-                let video = await db.getVideoById(videoId) ?? { Type: 'init', ID: videoId };
-                if (video.Type !== 'full') {
-                    const pvideo = await parseVideoInfo(video);
-                    video = getMoreCompleteVideoInfo(video, pvideo)
-                }
+    const concurrency = 6;
+    let idx = 0;
+    const nextUpdate = async () => {
+        if (idx >= matchedIds.length) return;
+        const i = idx++;
+        const videoId = matchedIds[i];
+        const mediaCenterId = matchedMap.get(videoId)!;
+        try {
+            let video = await db.getVideoById(videoId) ?? { Type: 'init', ID: videoId };
+            if (video.Type !== 'full') {
+                const pvideo = await parseVideoInfo(video)
+                video = getMoreCompleteVideoInfo(video, pvideo)
+            }
 
-                if (video.Type === 'cache' || video.Type === 'init') {
-                    skipped++;
-                    return;
-                }
-
-                db.putVideo(video);
-
-                const updateBody = prune({
-                    title: video.Title,
-                    description: video.RAW?.body ?? '',
-                    source: 'iwara',
-                    author: video.Author || video.Alias,
-                    tags: (video.Tags ?? []).map(t => t.id),
-                    duration: video.RAW?.file?.duration,
-                    mediaInfo: video.RAW ? JSON.stringify(video.RAW) : undefined,
-                    mimeType: video.RAW?.file?.mime,
-                    createdAt: new Date(video.UploadTime ?? video.RAW?.updatedAt ?? video.RAW?.createdAt ?? Date.now()).toISOString(),
-                });
-
-                const updateRes = await unlimitedFetch(`${apiBase}/api/media/${mediaCenterId}`, {
-                    method: 'PUT',
-                    headers: authHeaders,
-                    body: JSON.stringify(updateBody)
-                });
-
-                if (updateRes.ok) {
-                    updated++;
-                    GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter sync updated:', video.ID, '→', mediaCenterId);
-                } else {
-                    originalConsole.warn(`[MediaCenter] 更新失败 ${video.ID}: ${updateRes.status} ${await updateRes.text()}`);
-                    updateErrors++;
-                }
-            } catch (error) {
-                originalConsole.warn(`[MediaCenter] 同步异常 ${videoId}:`, stringify(error));
+            if (video.Type === 'cache' || video.Type === 'init') {
+                skipped++;
+                return;
+            }
+            db.putVideo(video)
+            if (await pushToMediaCenter(video as FullVideoInfo, mediaCenterId)) {
+                updated++;
+            } else {
                 updateErrors++;
             }
-        }));
-        updateProgressNode.firstChild!.textContent =
-            `MediaCenter 更新中... [${updated + skipped + updateErrors}/${matchedMap.size}] 更新: ${updated} 跳过: ${skipped} 错误: ${updateErrors}`;
-    }
+        } catch (error) {
+            originalConsole.warn(`[MediaCenter] 同步异常 ${videoId}:`, stringify(error));
+            updateErrors++;
+        } finally {
+            updateProgressNode.firstChild!.textContent =
+                `MediaCenter 更新中... [${updated + skipped + updateErrors}/${matchedMap.size}] 更新: ${updated} 跳过: ${skipped} 错误: ${updateErrors}`;
+            if (idx < matchedIds.length) await delay(100);
+            await nextUpdate();
+        }
+    };
+    await Promise.allSettled(
+        Array.from({ length: Math.min(concurrency, matchedIds.length) }, () => nextUpdate())
+    );
 
     updateProgressToast.hide();
 
@@ -1376,13 +1742,25 @@ async function fetchAndCachePage(page: number): Promise<true | false | 'last'> {
     if (isNullOrUndefined(rawVideos) || rawVideos.length === 0) return true;
 
     // 解析并批量写入 DB（与 handleVideosResponse 一致）
-    const settled = await Promise.allSettled(
-        rawVideos.map(info => parseVideoInfo({ Type: 'cache', ID: info.id, RAW: info }))
+    const list: Array<PartialVideoInfo | FullVideoInfo> = [];
+    let idx = 0;
+    const concurrency = 6;
+    const nextParse = async () => {
+        if (idx >= rawVideos.length) return;
+        const i = idx++;
+        try {
+            const info = await parseVideoInfo({ Type: 'cache', ID: rawVideos[i].id, RAW: rawVideos[i] });
+            if (info.Type === 'partial' || info.Type === 'full') {
+                list.push(info);
+            }
+        } catch { } finally {
+            if (idx < rawVideos.length) await delay(100);
+            await nextParse();
+        }
+    };
+    await Promise.allSettled(
+        Array.from({ length: Math.min(concurrency, rawVideos.length) }, () => nextParse())
     );
-    const list = settled
-        .filter(i => i.status === 'fulfilled')
-        .map(i => (i as PromiseFulfilledResult<VideoInfo>).value)
-        .filter((v): v is PartialVideoInfo | FullVideoInfo => v.Type === 'partial' || v.Type === 'full');
 
     if (list.length > 0) {
         const ids = list.map(v => v.ID);
@@ -1425,7 +1803,7 @@ export async function syncAllVideosPages(): Promise<void> {
 
     let succeeded = 0;
     const failedPages: number[] = [];
-    let page = 5800;
+    let page = 6000;
 
     while (true) {
         try {
@@ -1843,10 +2221,8 @@ export async function pushDownloadTask(videoInfo: VideoInfo) {
             }
             switch (config.downloadType) {
                 case DownloadType.Aria2:
-                    aria2Download(videoInfo)
-                    if (config.experimentalFeatures) {
-                        pushToMediaCenter(videoInfo)
-                    }
+                    aria2Download(videoInfo, true)
+                    // pushToMediaCenter 由 trackAria2Task 在下载完成后自动调用
                     break
                 case DownloadType.Iwaradl:
                     iwaradlDownload(videoInfo)

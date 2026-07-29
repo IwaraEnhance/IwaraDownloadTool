@@ -77,6 +77,24 @@ export async function injectCheckbox(element: Element) {
         }
     }
 
+    // 检查 MediaCenter 映射，显示是否已下载（仅在配置了 MediaCenter 时启用）
+    if (!config.mediaCenterApi.isEmpty() && !config.mediaCenterApiKey.isEmpty()) {
+        const mediaCenterId = await db.getMediaCenterIdMap(ID);
+        if (!isNullOrUndefined(mediaCenterId) && !mediaCenterId.isEmpty() && element.querySelector('.videoTeaser__thumbnail')?.querySelector('.downloaded') === null) {
+            originalNodeAppendChild.call(element.querySelector('.videoTeaser__thumbnail'), renderNode(
+                {
+                    nodeType: 'div',
+                    className: 'downloaded',
+                    childs: {
+                        nodeType: 'div',
+                        className: ['text', 'text--white', 'text--tiny', 'text--bold'],
+                        childs: '%#downloaded#%'
+                    }
+                }
+            ))
+        }
+    }
+
     if (getPageType() === PageType.Playlist) {
         let deletePlaylistItme = renderNode({
             nodeType: 'button',

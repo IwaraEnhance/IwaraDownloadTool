@@ -107,6 +107,7 @@
     "findedDownloadLink": "Possible third-party cloud storage link found!",
     "allCompleted": "All parsing completed!",
     "following": "Following",
+    "downloaded": "Downloaded",
     "parsingProgress": "Parsing Progress: ",
     "manualDownloadTips": "For individual downloads, input the video ID here. For batch downloads, separate video IDs with \"|\". Example: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "No available video sources",

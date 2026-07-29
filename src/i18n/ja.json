@@ -107,6 +107,7 @@
     "findedDownloadLink": "サードパーティクラウドストレージのダウンロードリンクを発見！",
     "allCompleted": "すべての解析完了！",
     "following": "フォロー中",
+    "downloaded": "ダウンロード済み",
     "parsingProgress": "解析進捗: ",
     "manualDownloadTips": "個別ダウンロードはここに動画IDを直接入力してください。バッチダウンロードは「|」で区切った動画IDを提供してください。例: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "利用可能な動画ソースがありません",
