@@ -465,7 +465,7 @@ async function trackAria2Task(
     let consecutiveErrors = 0;
 
     while (true) {
-        await delay(1000 * 10);
+        await delay(1000 * 10 * 3);
         try {
             const statusRes = await aria2API('aria2.tellStatus', [
                 currentGid,
