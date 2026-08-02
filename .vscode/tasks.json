@@ -54,6 +54,17 @@
             "problemMatcher": []
         },
         {
+            "label": "release",
+            "type": "npm",
+            "script": "release",
+            "path": "/",
+            "group": "build",
+            "dependsOn": [
+                "install"
+            ],
+            "problemMatcher": []
+        },
+        {
             "label": "test",
             "type": "npm",
             "script": "test",
