@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: ImportConfig = {
     filterLikedVideos: false,
     checkPriority: true,
     addUnlistedAndPrivate: false,
+    filterUnlistedAndPrivate: false,
     autoCollapseMenu: true,
     downloadPriority: 'Source',
     downloadType: DownloadType.Others,
@@ -50,6 +51,7 @@ export class Config {
     autoLike: boolean = DEFAULT_CONFIG.autoLike
     autoDownloadMetadata: boolean = DEFAULT_CONFIG.autoDownloadMetadata
     addUnlistedAndPrivate: boolean = DEFAULT_CONFIG.addUnlistedAndPrivate
+    filterUnlistedAndPrivate: boolean = DEFAULT_CONFIG.filterUnlistedAndPrivate
     autoCollapseMenu: boolean = DEFAULT_CONFIG.autoCollapseMenu
     enableUnsafeMode: boolean = DEFAULT_CONFIG.enableUnsafeMode
     enableBeautify: boolean = DEFAULT_CONFIG.enableBeautify

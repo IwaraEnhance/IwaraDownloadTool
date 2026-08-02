@@ -210,7 +210,16 @@ export class configEdit {
                         this.switchButton('autoInjectCheckbox'),
                         this.switchButton('autoDownloadMetadata'),
                         this.switchButton('autoCopySaveFileName'),
-                        this.switchButton('addUnlistedAndPrivate'),
+                        this.switchButton('addUnlistedAndPrivate', undefined, (name, e) => {
+                            const checked = (e.target as HTMLInputElement).checked
+                            this.target.addUnlistedAndPrivate = checked
+                            if (checked) this.target.filterUnlistedAndPrivate = false
+                        }),
+                        this.switchButton('filterUnlistedAndPrivate', undefined, (name, e) => {
+                            const checked = (e.target as HTMLInputElement).checked
+                            this.target.filterUnlistedAndPrivate = checked
+                            if (checked) this.target.addUnlistedAndPrivate = false
+                        }),
                         this.switchButton('autoCollapseMenu'),
                         this.switchButton('experimentalFeatures'),
                         this.switchButton('enableUnsafeMode'),
@@ -753,7 +762,7 @@ export class menu {
         }
 
 
-        if (config.addUnlistedAndPrivate && this.pageType === PageType.VideoList) {
+        if (config.addUnlistedAndPrivate && !config.filterUnlistedAndPrivate && this.pageType === PageType.VideoList) {
             this.parseUnlistedAndPrivate()
         } else {
             GM_getValue('isDebug') && originalConsole.debug('[Debug] Conditions not met: addUnlistedAndPrivate or pageType mismatch.');

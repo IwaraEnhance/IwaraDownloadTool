@@ -86,14 +86,22 @@ async function handleVideosResponse(response: Response, url: URL): Promise<Respo
         cloneBody.count = cloneBody.limit * (cloneBody.page + 1) + 1;
     }
 
+    // 过滤不公开和私有视频（订阅页 /videos?subscribed=true）
+    if (config.filterUnlistedAndPrivate && url.searchParams.has('subscribed')) {
+        cloneBody.results = (cloneBody.results as Iwara.Video[]).filter(i => !i.private && !i.unlisted);
+
+        cloneBody.limit = cloneBody.results.length;
+        cloneBody.count = cloneBody.limit * (cloneBody.page + 1) + 1;
+    }
+
     let preResponse = new Response(JSON.stringify(cloneBody), {
         status: cloneResponse.status,
         statusText: cloneResponse.statusText,
         headers: Object.fromEntries(cloneResponse.headers.entries())
     });
 
-    // 添加未列出和私有视频缓存
-    if (!config.addUnlistedAndPrivate) return preResponse;
+    // 添加未列出和私有视频缓存（与“过滤订阅页不公开/私有视频”功能互斥）
+    if (!config.addUnlistedAndPrivate || config.filterUnlistedAndPrivate) return preResponse;
 
     // 检查是否满足添加缓存的条件
     if (url.searchParams.has('user')) return preResponse;

@@ -37,6 +37,10 @@ if (GM_getValue('isDebug')) {
     unsafeWindow.syncCachedToMediaCenter = syncCachedToMediaCenter
     // @ts-ignore
     unsafeWindow.syncAllVideosPages = syncAllVideosPages
+    // @ts-ignore
+    unsafeWindow.exportAllToJsonFiles = db.exportAllToJsonFiles.bind(db)
+    // @ts-ignore
+    unsafeWindow.exportToJsonFiles = db.exportToJsonFiles.bind(db)
 }
 
 unsafeWindow.fetch = createInterceptedFetch();

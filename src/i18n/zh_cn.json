@@ -29,6 +29,7 @@
     "autoFollow": "自动关注选中的视频作者",
     "autoLike": "自动点赞选中的视频",
     "addUnlistedAndPrivate": "不公开和私有视频强制显示(需关注作者)",
+    "filterUnlistedAndPrivate": "过滤订阅页中的不公开和私有视频(与强制显示互斥)",
     "autoCollapseMenu": "菜单自动收起",
     "checkDownloadLink": "第三方网盘下载地址检查",
     "checkPriority": "下载画质检查",

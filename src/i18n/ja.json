@@ -29,6 +29,7 @@
     "autoFollow": "選択した動画の作者を自動フォロー",
     "autoLike": "選択した動画を自動いいね",
     "addUnlistedAndPrivate": "非公開・限定公開動画を強制表示（作者のフォローが必要）",
+    "filterUnlistedAndPrivate": "購読ページの非公開・限定公開動画をフィルタリング（強制表示とは排他）",
     "autoCollapseMenu": "メニューを自動で折りたたむ",
     "checkDownloadLink": "サードパーティクラウドストレージのダウンロードリンクをチェック",
     "checkPriority": "ダウンロード画質チェック",

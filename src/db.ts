@@ -48,6 +48,34 @@ interface IwaraDownloadToolDB extends DBSchema {
     };
 }
 
+/** 可导出为 JSON 文件的数据库表名 */
+export type ExportableTable = 'videos' | 'follows' | 'friends' | 'idmap';
+
+/** 文件下载方式 */
+export type DownloadMode = 'gm' | 'browser' | 'auto';
+
+/** 分批导出 JSON 文件的配置项 */
+export interface ExportToJsonOptions {
+    /** 每批记录数，默认 500 */
+    batchSize?: number;
+    /** 文件名前缀，默认使用表名（如 videos_001.json） */
+    prefix?: string;
+    /** JSON 是否格式化（缩进 2 空格），默认 true */
+    pretty?: boolean;
+    /** 每下载完成一个文件的进度回调 */
+    onProgress?: (done: number, totalBatches: number) => void;
+    /**
+     * 文件下载方式：
+     * - 'gm'：使用 GM_download（Chrome 上推荐）
+     * - 'browser'：使用 <a download> 触发浏览器原生下载
+     * - 'auto'：自动选择——Firefox 使用 browser（GM_download 的 blob URL 在 Firefox 上不可靠），
+     *           其他浏览器优先 GM_download，失败/超时自动回退 browser（默认）
+     */
+    downloadMode?: DownloadMode;
+    /** GM_download 超时时间（毫秒），默认 30000。blob 本地下载应瞬时完成，超时即视为不可用 */
+    gmTimeout?: number;
+}
+
 export class Database {
     private static instance: Database;
     private dbPromise: Promise<IDBPDatabase<IwaraDownloadToolDB>>;
@@ -320,6 +348,51 @@ export class Database {
         }
     }
 
+    /**
+     * 通用分批迭代指定表的所有记录（按主键升序，每批独立事务，防止 yield 自动提交）
+     * @param table 表名（'videos' | 'follows' | 'friends' | 'idmap'）
+     * @param batchSize 每批记录数，默认 500
+     * @yields T[] 每批记录数组
+     *
+     * @example
+     * for await (const batch of db.iterateTableBatched('videos', 500)) {
+     *     console.log(`本批 ${batch.length} 条`);
+     * }
+     */
+    public async *iterateTableBatched<T = unknown>(
+        table: ExportableTable,
+        batchSize: number = 500,
+    ): AsyncGenerator<T[], void, void> {
+        let lastKey: any = undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+            const db = await this.getDB();
+            const tx = db.transaction(table, 'readonly');
+            const store = tx.store;
+
+            let cursor: any;
+            if (lastKey !== undefined) {
+                // 从上一批最后一条主键之后开始（exclusive 边界）
+                const range = IDBKeyRange.lowerBound(lastKey, true);
+                cursor = await store.openCursor(range, 'next');
+            } else {
+                cursor = await store.openCursor(null, 'next');
+            }
+
+            const batch: T[] = [];
+            while (cursor && batch.length < batchSize) {
+                batch.push(cursor.value as T);
+                lastKey = cursor.primaryKey;
+                cursor = await cursor.continue();
+            }
+
+            hasMore = cursor !== null;
+            // 事务在此 yield 后安全自动提交
+            yield batch;
+        }
+    }
+
     // 添加或更新视频信息
     public async putVideo(video: VideoInfo): Promise<void> {
         const db = await this.getDB();
@@ -457,6 +530,134 @@ export class Database {
             cursor = await cursor.continue();
         }
         await tx.done;
+    }
+
+    // ── 分批导出 JSON 文件 ──
+
+    /**
+     * 通过浏览器将文本内容下载为本地文件
+     * - 'gm'：使用 GM_download（用户脚本环境，可保存到默认下载目录）
+     * - 'browser'：使用 <a download> 触发浏览器原生下载
+     * - 'auto'：Firefox 使用 browser（GM_download 的 blob URL 在 Firefox 上不受支持），
+     *           其他浏览器优先 GM_download，失败/超时自动回退 browser
+     */
+    private async downloadTextFile(
+        filename: string,
+        content: string,
+        mimeType: string,
+        mode: DownloadMode = 'auto',
+        gmTimeout: number = 30 * 1000,
+    ): Promise<void> {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+
+        // 浏览器原生下载（支持 blob URL，Firefox 可用）
+        const triggerBrowserDownload = () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            // 延迟释放，确保浏览器已读取 blob 内容
+            setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+        };
+
+        const isFirefox = () => /Firefox/i.test(navigator.userAgent);
+        const useGm = (mode === 'gm' || (mode === 'auto' && !isFirefox())) && typeof GM_download === 'function';
+
+        if (useGm) {
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    let settled = false;
+                    // 兜底超时：GM_download 可能因权限未授权/下载队列阻塞而始终不回调，避免 Promise 无限 pending
+                    const timer = setTimeout(() => {
+                        if (settled) return;
+                        settled = true;
+                        reject(new Error(`下载 ${filename} 超时（GM_download 未响应）`));
+                    }, gmTimeout);
+
+                    GM_download({
+                        url,
+                        name: filename,
+                        saveAs: false,
+                        onload: () => { if (settled) return; settled = true; clearTimeout(timer); URL.revokeObjectURL(url); resolve(); },
+                        onerror: (err) => { if (settled) return; settled = true; clearTimeout(timer); reject(new Error(`下载 ${filename} 失败: ${err.error}${err.details ? ` - ${err.details}` : ''}`)); },
+                        ontimeout: () => { if (settled) return; settled = true; clearTimeout(timer); reject(new Error(`下载 ${filename} 超时`)); },
+                    });
+                });
+                return;
+            } catch (error) {
+                // GM_download 失败/超时：auto 模式下回退为浏览器原生下载（此时 blob URL 尚未释放，可直接复用）
+                if (mode === 'auto') {
+                    console.warn(`[db] GM_download 不可用，回退浏览器原生下载: ${(error as Error).message}`);
+                    triggerBrowserDownload();
+                    return;
+                }
+                URL.revokeObjectURL(url);
+                throw error;
+            }
+        }
+
+        triggerBrowserDownload();
+    }
+
+    /**
+     * 分批导出指定表的数据为多个 JSON 文件（浏览器下载方式）
+     *
+     * 每批记录序列化为一个独立 JSON 数组文件，避免一次性序列化全库导致内存占用过大。
+     * 文件命名为 `${prefix}_001.json`、`${prefix}_002.json` ……
+     *
+     * @param table 要导出的表名
+     * @param options 导出配置
+     * @returns 实际生成的 JSON 文件数量
+     *
+     * @example
+     * // 将 videos 表按每批 500 条导出为 videos_001.json、videos_002.json …
+     * const count = await db.exportToJsonFiles('videos', {
+     *     batchSize: 500,
+     *     onProgress: (done, total) => console.log(`进度 ${done}/${total}`),
+     * });
+     */
+    public async exportToJsonFiles(
+        table: ExportableTable,
+        options: ExportToJsonOptions = {},
+    ): Promise<number> {
+        const { batchSize = 500, prefix = table, pretty = true, onProgress, downloadMode = 'auto', gmTimeout } = options;
+
+        const db = await this.getDB();
+        const total = await db.count(table);
+        const totalBatches = Math.ceil(total / batchSize);
+
+        let fileCount = 0;
+        for await (const batch of this.iterateTableBatched(table, batchSize)) {
+            fileCount++;
+            const content = JSON.stringify(batch, null, pretty ? 2 : undefined);
+            const filename = `${prefix}_${String(fileCount).padStart(3, '0')}.json`;
+            await this.downloadTextFile(filename, content, 'application/json;charset=utf-8', downloadMode, gmTimeout);
+            onProgress?.(fileCount, totalBatches);
+        }
+        return fileCount;
+    }
+
+    /**
+     * 分批导出数据库中全部表（videos、follows、friends、idmap）为 JSON 文件
+     * @param options 导出配置
+     * @returns 每张表实际生成的 JSON 文件数量
+     *
+     * @example
+     * const result = await db.exportAllToJsonFiles({ batchSize: 1000 });
+     * console.log(result); // { videos: 3, follows: 1, friends: 1, idmap: 1 }
+     */
+    public async exportAllToJsonFiles(
+        options: ExportToJsonOptions = {},
+    ): Promise<Record<ExportableTable, number>> {
+        const tables: ExportableTable[] = ['videos', 'follows', 'friends', 'idmap'];
+        const result = {} as Record<ExportableTable, number>;
+        for (const table of tables) {
+            result[table] = await this.exportToJsonFiles(table, options);
+        }
+        return result;
     }
 
     // 单例模式
