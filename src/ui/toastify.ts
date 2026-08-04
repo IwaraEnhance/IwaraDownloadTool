@@ -9,6 +9,8 @@ const toastContainers = new Map<string, HTMLElement>();
 const offscreenContainer = document.createElement('div')
 offscreenContainer.classList.add('offscreen-container')
 const camelToKebab = (str: string): string => str.replace(/([A-Z])/g, '-$1').toLowerCase()
+// 自动显示进度条的最小持续时长(ms)：短提示转瞬即逝，进度条无意义；常驻提示(-1)不自动消失也不显示
+const MIN_PROGRESS_DURATION = 3000
 const getContainer = (gravity: Gravity, position: Position): HTMLElement => {
     const containerId = `toast-container-${gravity}-${position}`
     let container = toastContainers.get(containerId)
@@ -139,7 +141,13 @@ export class Toast {
         this.position = this.options.position
         this.stopOnFocus = this.options.stopOnFocus
         this.oldestFirst = this.options.oldestFirst
-        this.showProgress = this.options.showProgress
+        // showProgress 未显式指定时，仅在「会自动隐藏且持续时间足够长」的 toast 上显示进度条
+        // 显式传 true/false 可覆盖此自动判定
+        this.showProgress = options.showProgress ?? (
+            !isNullOrUndefined(this.options.duration)
+            && this.options.duration > 0
+            && this.options.duration >= MIN_PROGRESS_DURATION
+        )
         this.element = document.createElement('div')
         this.applyBaseStyles()
             .addCloseButton()
@@ -170,7 +178,7 @@ export class Toast {
         if (this.options.style) {
             this.applyStyles(this.content, this.options.style)
         }
-        if (this.options.showProgress) {
+        if (this.showProgress) {
             this.progress = document.createElement('div')
             this.progress.classList.add('toast-progress')
             this.content.appendChild(this.progress)
