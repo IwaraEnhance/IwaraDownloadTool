@@ -5,7 +5,7 @@ import {
     isObject, isString, isNumber, isArray,
     isNotEmpty, hasFunction,
     isConvertibleToNumber,
-} from '../../src/env.ts';
+} from '../../src/core/env.ts';
 
 const guardTestGroup = new TestGroup('类型守卫函数', '类型判断工具函数测试');
 

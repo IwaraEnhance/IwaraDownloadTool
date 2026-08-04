@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { Dictionary } from '../../src/class.ts';
+import { Dictionary } from '../../src/core/class.ts';
 
 const dictTestGroup = new TestGroup('Dictionary 类', '扩展 Map 的工具方法测试');
 

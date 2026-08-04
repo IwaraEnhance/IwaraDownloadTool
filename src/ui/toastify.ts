@@ -1,18 +1,21 @@
-import { Dictionary } from "./class";
-import { debounce, isNullOrUndefined, UUID } from "./env";
+import { Dictionary } from "../core/class";
+import { debounce, isNullOrUndefined, UUID } from "../core/env";
 export type Gravity = 'top' | 'bottom';
 export type Position = 'left' | 'center' | 'right';
 export type CloseReason = 'timeout' | 'close-button' | 'other';
 export const activeToasts = new Dictionary<Toast>();
 const toastTimeouts = new Map<Toast, number>();
-const toastIntervals = new Map<Toast, number>();
 const toastContainers = new Map<string, HTMLElement>();
 const offscreenContainer = document.createElement('div')
 offscreenContainer.classList.add('offscreen-container')
+const camelToKebab = (str: string): string => str.replace(/([A-Z])/g, '-$1').toLowerCase()
+// 自动显示进度条的最小持续时长(ms)：短提示转瞬即逝，进度条无意义；常驻提示(-1)不自动消失也不显示
+const MIN_PROGRESS_DURATION = 3000
 const getContainer = (gravity: Gravity, position: Position): HTMLElement => {
     const containerId = `toast-container-${gravity}-${position}`
-    if (!toastContainers.has(containerId)) {
-        const container = document.createElement('div')
+    let container = toastContainers.get(containerId)
+    if (isNullOrUndefined(container)) {
+        container = document.createElement('div')
         container.id = containerId
         container.classList.add(
             'toast-container',
@@ -22,7 +25,7 @@ const getContainer = (gravity: Gravity, position: Position): HTMLElement => {
         document.body.appendChild(container)
         toastContainers.set(containerId, container)
     }
-    return toastContainers.get(containerId)!
+    return container
 }
 const addTimeout = (toast: Toast, callback: () => void): void => {
     if (isNullOrUndefined(toast.options.duration)) return
@@ -36,16 +39,14 @@ const addTimeout = (toast: Toast, callback: () => void): void => {
 
     if (!toast.showProgress) return
     if (isNullOrUndefined(toast.progress)) return
-    const startTime = Date.now()
-    const updateRemainingTime = () => {
-        if (isNullOrUndefined(toast.progress)) return
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, duration - elapsed)
-        toast.progress.style.setProperty('--toast-progress', `${remaining / duration}`)
-    }
-    toast.progress.style.setProperty('--toast-progress', `1`)
-    const intervalId = window.setInterval(updateRemainingTime, 20)
-    toastIntervals.set(toast, intervalId)
+    // 进度条由纯 CSS animation 驱动（替代 20ms setInterval 写 CSS 变量）
+    // duration 变化或重新计时（mouseleave 恢复）时：移除动画 + 强制 reflow 后恢复，从头播放
+    const progress = toast.progress
+    progress.style.setProperty('--toast-duration', `${duration}ms`)
+    progress.style.animation = 'none'
+    void progress.offsetWidth
+    progress.style.animation = ''
+    progress.style.animationPlayState = 'running'
 }
 const delTimeout = (toast: Toast): void => {
     const timeoutId = toastTimeouts.get(toast)
@@ -54,13 +55,9 @@ const delTimeout = (toast: Toast): void => {
         toastTimeouts.delete(toast)
     }
     if (!toast.showProgress) return
-    const intervalId = toastIntervals.get(toast)
-    if (!isNullOrUndefined(intervalId)) {
-        clearInterval(intervalId)
-        toastIntervals.delete(toast)
-    }
+    // 暂停进度条动画（mouseover 暂停 / hide 时停止，不再需要 interval）
     if (!isNullOrUndefined(toast.progress)) {
-        toast.progress.style.removeProperty('--toast-progress')
+        toast.progress.style.animationPlayState = 'paused'
     }
 }
 export interface ToastOptions {
@@ -75,6 +72,8 @@ export interface ToastOptions {
     className?: string | string[]
     stopOnFocus?: boolean
     showProgress?: boolean
+    /** 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的淡入淡出时长 */
+    rate?: number
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
     style?: Partial<CSSStyleDeclaration>
@@ -87,6 +86,7 @@ interface Options {
     stopOnFocus: boolean
     oldestFirst: boolean
     showProgress: boolean
+    rate: number
     text?: string
     node?: Node
     duration?: number
@@ -102,13 +102,13 @@ interface Options {
  * new Toast({ text: 'Hello World' }).show()
  */
 export class Toast {
-    private static readonly defaults: Options = {
-        id: UUID(),
+    private static readonly defaults: Omit<Options, 'id'> = {
         gravity: 'top',
         position: 'left',
         stopOnFocus: true,
         oldestFirst: true,
-        showProgress: false
+        showProgress: false,
+        rate: 1
     }
     public id: string
     public options: Options
@@ -124,26 +124,39 @@ export class Toast {
     private mouseOverHandler?: () => void
     private mouseLeaveHandler?: () => void
     private closeButtonHandler?: () => void
-    private animationEndHandler?: (e: AnimationEvent) => void
+    private animationEndHandler?: (e: TransitionEvent) => void
     private clickHandler?: (e: MouseEvent) => void
     private closeButton?: HTMLSpanElement
+    private hidden = false
     /**
      * Create a Toastify instance
      * @param options User configuration options
      */
     constructor(options: ToastOptions) {
+        // id 缺省时每次生成新 UUID（避免所有无 id 的 toast 共享 defaults 中的同一个 id）
+        this.id = options.id ?? UUID()
         this.options = {
             ...Toast.defaults,
-            ...options
+            ...options,
+            id: this.id
         }
-        this.id = this.options.id
         this.root = getContainer(this.options.gravity, this.options.position)
         this.gravity = this.options.gravity
         this.position = this.options.position
         this.stopOnFocus = this.options.stopOnFocus
         this.oldestFirst = this.options.oldestFirst
-        this.showProgress = this.options.showProgress
+        // showProgress 未显式指定时，仅在「会自动隐藏且持续时间足够长」的 toast 上显示进度条
+        // 显式传 true/false 可覆盖此自动判定
+        this.showProgress = options.showProgress ?? (
+            !isNullOrUndefined(this.options.duration)
+            && this.options.duration > 0
+            && this.options.duration >= MIN_PROGRESS_DURATION
+        )
         this.element = document.createElement('div')
+        // rate: 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的过渡时长
+        if (this.options.rate !== 1) {
+            this.element.style.setProperty('--toast-rate', String(this.options.rate))
+        }
         this.applyBaseStyles()
             .addCloseButton()
             .createContent()
@@ -173,7 +186,7 @@ export class Toast {
         if (this.options.style) {
             this.applyStyles(this.content, this.options.style)
         }
-        if (this.options.showProgress) {
+        if (this.showProgress) {
             this.progress = document.createElement('div')
             this.progress.classList.add('toast-progress')
             this.content.appendChild(this.progress)
@@ -227,9 +240,6 @@ export class Toast {
         return this
     }
     private applyStyles(element: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
-        function camelToKebab(str: string): string {
-            return str.replace(/([A-Z])/g, '-$1').toLowerCase()
-        }
         for (const key in styles) {
             const value = styles[key]
             const property = camelToKebab(key)
@@ -252,11 +262,7 @@ export class Toast {
         if (this.oldestFirst) {
             this.root.insertBefore(this.element, this.root.firstChild)
         } else {
-            if (this.root.lastChild) {
-                this.root.insertBefore(this.element, this.root.lastChild.nextSibling)
-            } else {
-                this.root.appendChild(this.element)
-            }
+            this.root.appendChild(this.element)
         }
         return this
     }
@@ -273,7 +279,10 @@ export class Toast {
     public show(): this {
         this.setToastRect()
             .insertToastElement()
-            .toggleAnimationState(true)
+        // 强制 reflow：让初始状态（opacity:0 / max-height:0）先被浏览器记录，再切换 .show 类，
+        // transition 才能从初始值开始淡入（否则同帧插入+加类会直接跳到目标态，看不到淡入）
+        void this.element.offsetWidth
+        this.toggleAnimationState(true)
             .setupAutoHide()
         return this
     }
@@ -304,19 +313,35 @@ export class Toast {
      * Triggers a CSS exit animation and removes the element after the animation completes
      */
     public hide(reason: CloseReason = 'other'): void {
-        if (!this.element) return
+        // 幂等：重复 hide（如关闭按钮 click 冒泡 + onClick 同时触发）只执行一次，避免 onClose 重复调用
+        if (this.hidden || !this.element) return
+        this.hidden = true
         delTimeout(this)
         activeToasts.delete(this.id)
-        this.animationEndHandler = (e: AnimationEvent) => {
-            if (e.animationName.startsWith('toast-out')) {
-                this.element.removeEventListener('animationend', this.animationEndHandler!)
-                this.element.remove()
-                this.options.onClose?.call(this, new CustomEvent('toast-close', {
-                    detail: { reason }
-                }))
-            }
+        let closed = false
+        const finalize = () => {
+            if (closed) return
+            closed = true
+            this.element.remove()
+            this.options.onClose?.call(this, new CustomEvent('toast-close', {
+                detail: { reason }
+            }))
         }
-        this.element.addEventListener('animationend', this.animationEndHandler)
+        // 淡出由 transition 驱动（max-height 收束到 0 时结束），监听 transitionend 后移除元素
+        this.animationEndHandler = (e: TransitionEvent) => {
+            if (e.propertyName !== 'max-height') return
+            this.element.removeEventListener('transitionend', this.animationEndHandler!)
+            finalize()
+        }
+        this.element.addEventListener('transitionend', this.animationEndHandler)
+        // 兜底：transitionend 丢失（后台标签页/无高度变化/事件被抑制）时强制移除，避免元素残留
+        // 时长读取计算样式的过渡时长（多值取最长）+ 300ms 余量，自适应不同淡出速度（如 toast-slow）
+        const durations = getComputedStyle(this.element).transitionDuration
+        const maxMs = durations.split(',')
+            .map(s => parseFloat(s))
+            .filter(Number.isFinite)
+            .reduce((max, sec) => Math.max(max, sec), 0) * 1000
+        window.setTimeout(finalize, Math.max(maxMs, 300) + 300)
         this.removeEventListeners()
             .toggleAnimationState(false)
     }

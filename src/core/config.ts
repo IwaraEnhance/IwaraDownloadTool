@@ -3,7 +3,7 @@ import "./env";
 import { isNullOrUndefined, stringify } from "./env";
 import { originalConsole } from "./hijack";
 import { DownloadType } from "./enum";
-import { i18nList, Language } from "./i18n";
+import { i18nList, Language } from "../i18n";
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,
@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: ImportConfig = {
     filterLikedVideos: false,
     checkPriority: true,
     addUnlistedAndPrivate: false,
+    filterUnlistedAndPrivate: false,
     autoCollapseMenu: true,
     downloadPriority: 'Source',
     downloadType: DownloadType.Others,
@@ -30,6 +31,8 @@ const DEFAULT_CONFIG: ImportConfig = {
     aria2Token: '',
     iwaradlPath: 'http://127.0.0.1:23456/api/tasks',
     iwaradlToken: '',
+    mediaCenterApi: 'http://127.0.0.1:3000',
+    mediaCenterApiKey: '',
     priority: {
         'Source': 100,
         '540': 99,
@@ -48,6 +51,7 @@ export class Config {
     autoLike: boolean = DEFAULT_CONFIG.autoLike
     autoDownloadMetadata: boolean = DEFAULT_CONFIG.autoDownloadMetadata
     addUnlistedAndPrivate: boolean = DEFAULT_CONFIG.addUnlistedAndPrivate
+    filterUnlistedAndPrivate: boolean = DEFAULT_CONFIG.filterUnlistedAndPrivate
     autoCollapseMenu: boolean = DEFAULT_CONFIG.autoCollapseMenu
     enableUnsafeMode: boolean = DEFAULT_CONFIG.enableUnsafeMode
     enableBeautify: boolean = DEFAULT_CONFIG.enableBeautify
@@ -68,6 +72,8 @@ export class Config {
     aria2Token: string = DEFAULT_CONFIG.aria2Token
     iwaradlPath: string = DEFAULT_CONFIG.iwaradlPath
     iwaradlToken: string = DEFAULT_CONFIG.iwaradlToken
+    mediaCenterApi: string = DEFAULT_CONFIG.mediaCenterApi
+    mediaCenterApiKey: string = DEFAULT_CONFIG.mediaCenterApiKey
     priority: Record<string, number> = DEFAULT_CONFIG.priority
     constructor(importConfig?: ImportConfig) {
         let body = new Proxy(this, {

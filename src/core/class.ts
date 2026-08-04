@@ -460,11 +460,12 @@ export class GMSyncDictionary<T> extends Dictionary<T> {
      * 构造函数
      * @param name 存储在GM_setValue中的键名
      * @param initial 初始值列表
+     * @param validator 值校验器（默认校验 VideoInfo，可传入自定义校验以存储其他类型）
      */
-    constructor(name: string, initial: Array<[string, T]> = []) {
+    constructor(name: string, initial: Array<[string, T]> = [], validator: (value: unknown) => boolean = isVideoInfo) {
         let stored = initial.any() ? initial : GM_getValue(name, initial);
         try {
-            super(stored.filter(([_, info]) => isVideoInfo(info)));
+            super(stored.filter(([_, value]) => validator(value)));
         } catch (error) {
             super()
         }

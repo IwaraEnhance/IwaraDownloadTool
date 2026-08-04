@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { stringify, prune, UUID, delay, throttle, debounce } from '../../src/env.ts';
+import { stringify, prune, UUID, delay, throttle, debounce } from '../../src/core/env.ts';
 
 const utilsTestGroup = new TestGroup('工具函数', 'stringify / prune / UUID / delay 测试');
 
@@ -72,8 +72,8 @@ utilsTestGroup.add(new Test('prune 移除 null 值', 'async', function () {
     const result = prune({ a: 1, b: null, c: undefined, d: 'hello' });
     this.assertEqual(result.a, 1);
     this.assertEqual(result.d, 'hello');
-    this.assertUndefined(result.b);
-    this.assertUndefined(result.c);
+    this.assertUndefined((result as Record<string, unknown>).b);
+    this.assertUndefined((result as Record<string, unknown>).c);
 }));
 
 utilsTestGroup.add(new Test('prune 递归清理嵌套对象', 'async', function () {
@@ -84,7 +84,7 @@ utilsTestGroup.add(new Test('prune 递归清理嵌套对象', 'async', function 
     });
     this.assertEqual(result.a, 1);
     this.assertEqual(result.b?.y, 'keep');
-    this.assertUndefined(result.b?.x);
+    this.assertUndefined((result.b as Record<string, unknown>)?.x);
     this.assertEqual((result.c as any[]).length, 1);
     this.assertEqual((result.c as any[])[0], 'keep');
 }));

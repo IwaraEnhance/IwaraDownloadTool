@@ -1,5 +1,5 @@
 import { Test, TestGroup } from '../framework.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 import dayjs from "dayjs";
 
 Date.prototype.format = function (format) {

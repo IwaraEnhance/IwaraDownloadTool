@@ -1,15 +1,11 @@
+import site from "../data/site.json";
+
 if (unsafeWindow.IwaraDownloadTool) {
     throw `Script is already running`
 }
 unsafeWindow.IwaraDownloadTool = true;
-var officialWhiteList = [
-    'iwara.tv',
-    'iwara.zip',
-    'iwara.shop',
-    'iwara.ai'
-]
 var domain = window.location.hostname
-const isOfficial = officialWhiteList.some(d =>
+const isOfficial = site.officialDomains.some(d =>
     domain === d || domain.endsWith('.' + d)
 )
 if (!isOfficial && domain.includes('iwara')) {

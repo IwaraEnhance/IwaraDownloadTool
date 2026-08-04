@@ -25,6 +25,9 @@
             "script": "dev:i18n",
             "path": "/",
             "group": "none",
+            "dependsOn": [
+                "install"
+            ],
             "problemMatcher": [],
             "isBackground": true,
             "presentation": {
@@ -45,6 +48,20 @@
             "script": "build",
             "path": "/",
             "group": "build",
+            "dependsOn": [
+                "install"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "release",
+            "type": "npm",
+            "script": "release",
+            "path": "/",
+            "group": "build",
+            "dependsOn": [
+                "install"
+            ],
             "problemMatcher": []
         },
         {
@@ -53,6 +70,9 @@
             "script": "test",
             "path": "/",
             "group": "test",
+            "dependsOn": [
+                "install"
+            ],
             "problemMatcher": []
         }
     ]

@@ -152,6 +152,7 @@ declare interface ImportConfig {
     filterLikedVideos: boolean;
     checkPriority: boolean;
     addUnlistedAndPrivate: boolean;
+    filterUnlistedAndPrivate: boolean;
     autoCollapseMenu: boolean;
     downloadPriority: keyof Record<string, number>;
     downloadType: DownloadType;
@@ -163,6 +164,8 @@ declare interface ImportConfig {
     aria2Token: string;
     iwaradlPath: string;
     iwaradlToken: string;
+    mediaCenterApi: string;
+    mediaCenterApiKey: string;
     priority: Record<string, number>;
 }
 /**
@@ -255,6 +258,7 @@ interface PartialVideoInfo extends VideoInfoBase {
     ExternalUrl?: string;
     RAW: Iwara.Video;
 }
+
 interface CacheVideoInfo extends VideoInfoBase {
     Type: 'cache'
     RAW: Iwara.Video;

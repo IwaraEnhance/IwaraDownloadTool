@@ -13,6 +13,8 @@
 - 選択した動画の作者を自動フォロー <sup>\*デフォルトでは無効。手動で有効化する必要あり</sup>
 - 選択した動画を自動で「いいね」または「お気に入り」に登録 <sup>\*デフォルトでは無効。手動で有効化する必要あり</sup>
 - 非公開およびプライベート動画を強制表示 <sup>\*作者をフォローする必要あり</sup>
+- サブスクリプションページで非公開・プライベート動画をフィルタリング <sup>\*デフォルトでは無効。強制表示とは排他</sup>
+- Aria2 タスク自動追跡：既存タスクを自動引き継ぎ、速度が遅い場合は自動再起動
 - プライベート動画のダウンロードをサポート <sup>\*作者と友達関係にあるアカウントが必要</sup>
 - 非公開動画のダウンロードをサポート <sup>\*動画IDを知っている必要あり</sup>
 
@@ -42,25 +44,34 @@
 
 #### 利用可能なパス変数
 
-- ダウンロード時間 %#NowTime#%
-- 公開時間 %#UploadTime#%
-- 動画タイトル %#TITLE#%
-- 動画ID %#ID#%
-- 動画作者 %#AUTHOR#%
-- 動画作者（ニックネーム） %#ALIAS#%
-- 画質 %#QUALITY#%
+| 変数名         | 説明             | 使用例                           | 出力                    |
+| -------------- | ---------------- | -------------------------------- | ----------------------- |
+| %#NowTime#%    | ダウンロード時間 | %#NowTime:YYYY-MM-DD#%           | 2022-02-22              |
+| %#UploadTime#% | 公開時間         | %#UploadTime:YYYY-MM-DD+HH.mm.ss#% | 2022-02-22+22.22.22 |
+| %#TITLE#%      | 動画タイトル     | %#TITLE#%                        | 例:タイトル             |
+| %#ID#%         | 動画ID           | %#ID#%                           | ExampleID               |
+| %#AUTHOR#%     | 動画作者         | %#AUTHOR#%                       | ExampleAuthor           |
+| %#ALIAS#%      | 作者ニックネーム | %#ALIAS#%                        | ExampleAlias            |
+| %#QUALITY#%    | 画質             | %#QUALITY#%                      | Source                  |
 
-  例:  
-  `%#NowTime:YYYY-MM-DD#%_%#AUTHOR#%_%#UploadTime:YYYY-MM-DD#%_%#TITLE#%_%#QUALITY#%[%#ID#%].MP4`
+完全な例:
 
-  出力例:
+`/Iwara/%#AUTHOR#%/%#NowTime:YYYY-MM-DD#%/(%#ALIAS#%)%#UploadTime:YYYY-MM-DD+HH.mmss#%_%#TITLE#%_%#QUALITY#%[%#ID#%].MP4`
 
-  `2024-02-19_ExampleAuthorID_2024-02-18_ExampleTitle_Source[ExampleID].MP4`
+出力:
+
+`/Iwara/ExampleAuthor/2022-02-22/(ExampleAlias)2022-02-22+22.22.22_例:タイトル_Source[ExampleID].MP4`
 
 ## 依存ライブラリ
 
+### ランタイム依存
+
 - [day.js](https://github.com/iamkun/dayjs) - [MIT License](https://opensource.org/licenses/MIT)
 - [idb](https://github.com/jakearchibald/idb) - [ISC License](https://opensource.org/license/isc)
+- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT) <sup>\*内蔵ソース（vendored）、src/core/env.ts 参照</sup>
+
+### 開発依存
+
+- [TypeScript](https://github.com/microsoft/TypeScript) - [Apache-2.0](https://opensource.org/licenses/Apache-2.0)
 - [esbuild](https://github.com/evanw/esbuild) - [MIT License](https://opensource.org/licenses/MIT)
-- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT)
-- [aria2rpc](https://github.com/pboymt/aria2rpc)
+- [tsx](https://github.com/privatenumber/tsx) - [MIT License](https://opensource.org/licenses/MIT)

@@ -1,5 +1,5 @@
 import '../setup.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 import { Test, TestGroup } from '../framework.ts';
 
 const numberTestGroup = new TestGroup('Number 静态方法', 'Number 构造函数上的工具方法测试');

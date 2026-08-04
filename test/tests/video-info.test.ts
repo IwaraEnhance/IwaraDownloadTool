@@ -4,7 +4,7 @@ import {
     isVideoInfo, isInitVideoInfo, isFullVideoInfo,
     isPartialVideoInfo, isCacheVideoInfo, isFailVideoInfo,
     assertVideoInfoType,
-} from '../../src/env.ts';
+} from '../../src/core/env.ts';
 
 const videoInfoGroup = new TestGroup('VideoInfo 类型守卫', 'isVideoInfo 系列类型保护函数测试');
 

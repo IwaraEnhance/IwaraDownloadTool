@@ -1,0 +1,147 @@
+#pluginConfig {
+    color: var(--text);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.75);
+    z-index: 2147483646;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#pluginConfig .main {
+    background-color: var(--body);
+    padding: 24px;
+    margin: 10px;
+    overflow-y: auto;
+    width: 480px;
+}
+
+#pluginConfig .buttonList {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+
+@media (max-width: 640px) {
+    #pluginConfig .main {
+        width: 100%;
+        height: 80%;
+    }
+}
+
+#pluginConfig button {
+    background-color: var(--primary);
+    margin: 0px 20px 0px 20px;
+    padding: 10px 20px;
+    color: var(--primary-text);
+    font-size: 18px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#pluginConfig button {
+    background-color: var(--primary);
+}
+
+#pluginConfig button[disabled] {
+    background-color: var(--muted);
+    cursor: not-allowed;
+}
+
+#pluginConfig p {
+    display: flex;
+    flex-direction: column;
+    margin-top: 10px;
+    margin-bottom: 0px;
+}
+
+#pluginConfig fieldset {
+    border: none;
+    margin: 10px 0 0 0;
+    padding: 0;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+}
+
+#pluginConfig fieldset>legend {
+    margin: 0 0 5px 0;
+    padding: 0;
+}
+
+#pluginConfig fieldset>label {
+    text-align: center;
+}
+
+#pluginConfig p label {
+    display: flex;
+    flex-direction: column;
+    margin: 5px 0 0 0;
+}
+
+#pluginConfig .inputRadioLine {
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+#pluginConfig input[type="text"],
+#pluginConfig input[type="password"] {
+    outline: none;
+    border-top: none;
+    border-right: none;
+    border-left: none;
+    border-image: initial;
+    border-bottom: 1px solid var(--muted);
+    line-height: 1;
+    height: 30px;
+    box-sizing: border-box;
+    width: 100%;
+    background-color: var(--body);
+    color: var(--text);
+}
+
+#pluginConfig input[type='checkbox'].switch {
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    position: relative;
+    width: 40px;
+    height: 20px;
+    background: var(--muted);
+    border-radius: 10px;
+    transition: border-color .2s, background-color .2s;
+}
+
+#pluginConfig input[type='checkbox'].switch::after {
+    content: '';
+    display: inline-block;
+    width: 40%;
+    height: 80%;
+    border-radius: 50%;
+    background: var(--white);
+    box-shadow: 0, 0, 2px, var(--muted);
+    transition: .2s;
+    top: 2px;
+    position: absolute;
+    right: 55%;
+}
+
+#pluginConfig input[type='checkbox'].switch:checked {
+    background: var(--success);
+}
+
+#pluginConfig input[type='checkbox'].switch:checked::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    top: 2px;
+}

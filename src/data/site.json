@@ -1,0 +1,15 @@
+{
+    "officialDomains": [
+        "iwara.tv",
+        "iwara.zip",
+        "iwara.shop",
+        "iwara.ai"
+    ],
+    "supportedDomains": [
+        "iwara.tv",
+        "iwara.ai"
+    ],
+    "apiEndpoint": "api.iwara.tv",
+    "syncStartPage": 6000,
+    "maxFindPages": 64
+}

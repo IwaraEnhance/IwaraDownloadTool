@@ -1,5 +1,5 @@
 import { Test, TestGroup } from '../framework.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 
 const performanceGroup = new TestGroup('String.replaceVariable性能测试');
 

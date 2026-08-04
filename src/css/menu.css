@@ -1,0 +1,145 @@
+#pluginMenu {
+    z-index: 2147483644;
+    position: fixed;
+    top: 50%;
+    right: 0;
+    padding: 10px 26px;
+    background-color: var(--body-dark);
+    border: 1px solid var(--text);
+    border-radius: 5px;
+    box-shadow: 0 0 10px var(--text);
+    transform: translate(calc(100% - 26px)) translateY(-50%);
+    transition: transform .3s ease-in-out;
+}
+
+#pluginMenu:not(.expanded) {
+    overflow: visible;
+}
+
+#pluginMenu:not(.expanded)::before {
+    content: "";
+    mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgLTk2MCA5NjAgOTYwIj48cGF0aCBkPSJNNTYwLTI0MCAzMjAtNDgwbDI0MC0yNDAgNTYgNTYtMTg0IDE4NCAxODQgMTg0LTU2IDU2WiIvPjwvc3ZnPg==") no-repeat center;
+    -webkit-mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgLTk2MCA5NjAgOTYwIj48cGF0aCBkPSJNNTYwLTI0MCAzMjAtNDgwbDI0MC0yNDAgNTYgNTYtMTg0IDE4NCAxODQgMTg0LTU2IDU2WiIvPjwvc3ZnPg==") no-repeat center;
+    background-color: var(--text);
+    width: 24px;
+    height: 24px;
+    position: absolute;
+    left: 0;
+    top: 50%;
+    line-height: 0;
+    transform: translate(0%, -50%);
+}
+
+#pluginMenu.expanded {
+    transform: translateX(0) translateY(-50%);
+}
+
+#pluginMenu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#pluginMenu li {
+    padding: 5px 10px;
+    cursor: pointer;
+    text-align: center;
+    user-select: none;
+    color: var(--text);
+}
+
+#pluginMenu li:hover {
+    background-color: var(--primary-dark);
+    border-radius: 3px;
+}
+
+/* 响应式：小屏幕菜单适配 */
+@media (max-width: 720px) {
+    #pluginMenu {
+        padding: 8px 18px;
+        transform: translate(calc(100% - 18px)) translateY(-50%);
+    }
+
+    #pluginMenu:not(.expanded)::before {
+        width: 20px;
+        height: 20px;
+    }
+
+    #pluginMenu.expanded {
+        transform: translateX(0) translateY(-50%);
+    }
+
+    #pluginMenu li {
+        padding: 12px 16px;
+        font-size: 15px;
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+    }
+}
+
+/* 小屏手机进一步优化 */
+@media (max-width: 480px) {
+    #pluginMenu {
+        padding: 6px 14px;
+        transform: translate(calc(100% - 14px)) translateY(-50%);
+    }
+
+    #pluginMenu:not(.expanded)::before {
+        width: 18px;
+        height: 18px;
+    }
+
+    #pluginMenu li {
+        padding: 14px 18px;
+        font-size: 14px;
+    }
+}
+
+/* 触控设备优化：扩大触摸目标 + 斑马纹替代悬停 */
+@media (pointer: coarse) {
+    #pluginMenu {
+        /* 收起时留出更宽的可见条，增大点击目标 */
+        padding: 12px 34px;
+        transform: translate(calc(100% - 34px)) translateY(-50%);
+    }
+
+    #pluginMenu:not(.expanded)::before {
+        width: 28px;
+        height: 28px;
+        left: 3px;
+    }
+
+    #pluginMenu.expanded {
+        transform: translateX(0) translateY(-50%);
+    }
+
+    #pluginMenu li {
+        padding: 14px 22px;
+        font-size: 15px;
+        min-width: 48px;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+    }
+
+    /* 斑马纹（交替背景色）：替代桌面端 hover 高亮，让用户在触摸前即可区分菜单项 */
+    #pluginMenu li:nth-child(odd) {
+        background-color: var(--body-dark);
+    }
+
+    #pluginMenu li:nth-child(even) {
+        background-color: var(--body);
+    }
+
+    /* 触摸按下反馈 */
+    #pluginMenu li:active {
+        background-color: var(--primary-dark) !important;
+        border-radius: 3px;
+    }
+}

@@ -14,7 +14,7 @@ declare global {
         isNegativeInteger(value: unknown): value is NegativeInteger;
         isPositiveFloat(value: unknown): value is PositiveFloat;
         isNegativeFloat(value: unknown): value is NegativeFloat;
-        isConvertibleNumber(value: unknown, includeInfinity: boolean): value is ConvertibleNumber;
+        isConvertibleNumber(value: unknown, includeInfinity?: boolean): value is ConvertibleNumber;
         toPositiveInteger(value: number): PositiveInteger;
         toNegativeInteger(value: number): NegativeInteger;
         toPositiveFloat(value: number): PositiveFloat;
@@ -168,6 +168,8 @@ declare global {
     }
 }
 
+// emoji 正则复制自 emoji-regex 库（slevithan/emoji-regex-xs，MIT License）
+// 因仅需此一处使用而内嵌源码，未通过包管理器引入
 const emojiBase = String.raw`\p{Emoji}(?:\p{EMod}|[\u{E0020}-\u{E007E}]+\u{E007F}|\uFE0F?\u20E3?)`;
 export const emojiRegex = new RegExp(String.raw`\p{RI}{2}|(?![#*\d](?!\uFE0F?\u20E3))${emojiBase}(?:\u200D${emojiBase})*`, 'gu');
 

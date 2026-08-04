@@ -1,0 +1,59 @@
+.fixed-bottom-right {
+    position: fixed;
+    bottom: 0px;
+    right: 0px;
+    background-color: var(--body);
+    color: var(--text);
+    border-top: 1px solid var(--primary);
+    border-left: 1px solid var(--primary);
+    border-top-left-radius: 6px;
+    padding: 2px 5px 2px 5px;
+    margin: 0px;
+    user-select: none;
+    z-index: 102;
+}
+
+.downloaded {
+    bottom: 46px;
+    right: 2px;
+    border-radius: 2px;
+    position: absolute;
+    padding: 3px 5px;
+    background-color: rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+.follow {
+    bottom: 24px;
+    right: 2px;
+    border-radius: 2px;
+    position: absolute;
+    padding: 3px 5px;
+    background-color: rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+.selectButton {
+    accent-color: var(--primary);
+    position: absolute;
+    width: 38px;
+    height: 38px;
+    right: 0px;
+    cursor: pointer;
+    z-index: 102;
+    top: 22px;
+}
+
+.deleteButton {
+    accent-color: var(--danger);
+    position: absolute;
+    width: 38px;
+    height: 38px;
+    left: 0px;
+    cursor: pointer;
+    z-index: 101;
+    border: none;
+    padding: 0;
+    margin: 3px;
+    top: 22px;
+}
