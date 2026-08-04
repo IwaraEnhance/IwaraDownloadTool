@@ -72,6 +72,8 @@ export interface ToastOptions {
     className?: string | string[]
     stopOnFocus?: boolean
     showProgress?: boolean
+    /** 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的淡入淡出时长 */
+    rate?: number
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
     style?: Partial<CSSStyleDeclaration>
@@ -84,6 +86,7 @@ interface Options {
     stopOnFocus: boolean
     oldestFirst: boolean
     showProgress: boolean
+    rate: number
     text?: string
     node?: Node
     duration?: number
@@ -104,7 +107,8 @@ export class Toast {
         position: 'left',
         stopOnFocus: true,
         oldestFirst: true,
-        showProgress: false
+        showProgress: false,
+        rate: 1
     }
     public id: string
     public options: Options
@@ -120,7 +124,7 @@ export class Toast {
     private mouseOverHandler?: () => void
     private mouseLeaveHandler?: () => void
     private closeButtonHandler?: () => void
-    private animationEndHandler?: (e: AnimationEvent) => void
+    private animationEndHandler?: (e: TransitionEvent) => void
     private clickHandler?: (e: MouseEvent) => void
     private closeButton?: HTMLSpanElement
     private hidden = false
@@ -149,6 +153,10 @@ export class Toast {
             && this.options.duration >= MIN_PROGRESS_DURATION
         )
         this.element = document.createElement('div')
+        // rate: 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的过渡时长
+        if (this.options.rate !== 1) {
+            this.element.style.setProperty('--toast-rate', String(this.options.rate))
+        }
         this.applyBaseStyles()
             .addCloseButton()
             .createContent()
@@ -271,7 +279,10 @@ export class Toast {
     public show(): this {
         this.setToastRect()
             .insertToastElement()
-            .toggleAnimationState(true)
+        // 强制 reflow：让初始状态（opacity:0 / max-height:0）先被浏览器记录，再切换 .show 类，
+        // transition 才能从初始值开始淡入（否则同帧插入+加类会直接跳到目标态，看不到淡入）
+        void this.element.offsetWidth
+        this.toggleAnimationState(true)
             .setupAutoHide()
         return this
     }
@@ -307,15 +318,30 @@ export class Toast {
         this.hidden = true
         delTimeout(this)
         activeToasts.delete(this.id)
-        this.animationEndHandler = (e: AnimationEvent) => {
-            if (e.animationName.startsWith('toast-out')) {
-                this.element.remove()
-                this.options.onClose?.call(this, new CustomEvent('toast-close', {
-                    detail: { reason }
-                }))
-            }
+        let closed = false
+        const finalize = () => {
+            if (closed) return
+            closed = true
+            this.element.remove()
+            this.options.onClose?.call(this, new CustomEvent('toast-close', {
+                detail: { reason }
+            }))
         }
-        this.element.addEventListener('animationend', this.animationEndHandler, { once: true })
+        // 淡出由 transition 驱动（max-height 收束到 0 时结束），监听 transitionend 后移除元素
+        this.animationEndHandler = (e: TransitionEvent) => {
+            if (e.propertyName !== 'max-height') return
+            this.element.removeEventListener('transitionend', this.animationEndHandler!)
+            finalize()
+        }
+        this.element.addEventListener('transitionend', this.animationEndHandler)
+        // 兜底：transitionend 丢失（后台标签页/无高度变化/事件被抑制）时强制移除，避免元素残留
+        // 时长读取计算样式的过渡时长（多值取最长）+ 300ms 余量，自适应不同淡出速度（如 toast-slow）
+        const durations = getComputedStyle(this.element).transitionDuration
+        const maxMs = durations.split(',')
+            .map(s => parseFloat(s))
+            .filter(Number.isFinite)
+            .reduce((max, sec) => Math.max(max, sec), 0) * 1000
+        window.setTimeout(finalize, Math.max(maxMs, 300) + 300)
         this.removeEventListeners()
             .toggleAnimationState(false)
     }
