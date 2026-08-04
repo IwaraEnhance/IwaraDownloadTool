@@ -1,23 +1,34 @@
 
-import "./mutex";
-import mainCSS from "./css/main.css";
+import "./core/mutex";
+import site from "./data/site.json";
+import rainbowCSS from "./css/rainbow.css";
+import menuCSS from "./css/menu.css";
+import configCSS from "./css/config.css";
+import overlayCSS from "./css/overlay.css";
+import videoCardCSS from "./css/videoCard.css";
+import toastCSS from "./css/toast.css";
 import beautifyCSS from "./css/beautify.css";
 import widescreenCSS from "./css/widescreen.css"
-import { isNullOrUndefined, stringify } from "./env";
+import { isNullOrUndefined, stringify } from "./core/env";
 import { i18nList } from "./i18n";
-import { config, Config } from "./config";
-import { originalAddEventListener, originalConsole, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./hijack";
-import { Dictionary, GMSyncDictionary, Version } from "./class";
-import { db } from "./db";
-import { findElement, renderNode, unlimitedFetch } from "./extension";
-import { check, getAuth, newToast, syncAllVideosPages, syncCachedToMediaCenter, toastNode, trackExistingAria2Tasks } from "./function";
-import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui";
-import { PageType, ToastType, VersionState } from "./enum";
-import { createInterceptedFetch } from "./fetchInterceptor";
+import { config, Config } from "./core/config";
+import { originalAddEventListener, originalConsole, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
+import { Dictionary, GMSyncDictionary, Version } from "./core/class";
+import { db } from "./core/db";
+import { findElement, renderNode, unlimitedFetch } from "./core/extension";
+import { check } from "./network/envCheck";
+import { getAuth } from "./network/auth";
+import { newToast, toastNode } from "./ui/notify";
+import { syncAllVideosPages } from "./network/syncPages";
+import { syncCachedToMediaCenter } from "./network/mediaCenter";
+import { trackExistingAria2Tasks } from "./download/aria2TrackManager";
+import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui/ui";
+import { PageType, ToastType, VersionState } from "./core/enum";
+import { createInterceptedFetch } from "./network/fetchInterceptor";
 
 import { getDomain } from "tldts";
 export var domain = getDomain(unsafeWindow.location.href) ?? ''
-if (domain !== "iwara.tv" && domain !== "iwara.ai") {
+if (!site.supportedDomains.includes(domain)) {
     throw "Not target"
 }
 
@@ -45,7 +56,7 @@ if (GM_getValue('isDebug')) {
 
 unsafeWindow.fetch = createInterceptedFetch();
 
-export var apiEndpoint = 'api.iwara.tv'
+export var apiEndpoint = site.apiEndpoint
 export const isPageType = (type: string): type is PageType => new Set(Object.values(PageType)).has(type as PageType)
 export var isLoggedIn = () => !(unsafeWindow.localStorage.getItem('token') ?? '').isEmpty()
 export var rating = () => localStorage.getItem('rating') ?? 'all'
@@ -228,7 +239,7 @@ function firstRun() {
     }))
 }
 async function main() {
-    GM_addStyle(mainCSS);
+    [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach(css => GM_addStyle(css));
     watermark.inject()
     if (new Version(GM_getValue('version', '0.0.0')).compare(new Version('3.3.0')) === VersionState.Low) {
         GM_setValue('isFirstRun', true)

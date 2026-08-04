@@ -1,5 +1,5 @@
 import { Test, TestGroup } from '../framework.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 
 const emojiTestGroup = new TestGroup('emoji匹配测试');
 

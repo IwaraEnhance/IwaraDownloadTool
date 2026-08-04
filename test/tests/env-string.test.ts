@@ -1,5 +1,5 @@
 import '../setup.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 import { Test, TestGroup } from '../framework.ts';
 
 const stringTestGroup = new TestGroup('String 原型方法', 'String.prototype 工具方法测试');

@@ -3,7 +3,7 @@ import "./env";
 import { isNullOrUndefined, stringify } from "./env";
 import { originalConsole } from "./hijack";
 import { DownloadType } from "./enum";
-import { i18nList, Language } from "./i18n";
+import { i18nList, Language } from "../i18n";
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,

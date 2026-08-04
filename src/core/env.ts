@@ -14,7 +14,7 @@ declare global {
         isNegativeInteger(value: unknown): value is NegativeInteger;
         isPositiveFloat(value: unknown): value is PositiveFloat;
         isNegativeFloat(value: unknown): value is NegativeFloat;
-        isConvertibleNumber(value: unknown, includeInfinity: boolean): value is ConvertibleNumber;
+        isConvertibleNumber(value: unknown, includeInfinity?: boolean): value is ConvertibleNumber;
         toPositiveInteger(value: number): PositiveInteger;
         toNegativeInteger(value: number): NegativeInteger;
         toPositiveFloat(value: number): PositiveFloat;

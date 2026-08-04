@@ -1,8 +1,9 @@
-import { originalConsole, originalFetch } from "./hijack";
-import { config } from "./config";
-import { db } from "./db";
-import { getAuth, getPlayload, parseVideoInfo } from "./function";
-import { isNull, isNullOrUndefined, isString, isUndefined } from "./env";
+import { originalConsole, originalFetch } from "../core/hijack";
+import { config } from "../core/config";
+import { db } from "../core/db";
+import { getAuth, getPlayload } from "./auth";
+import { parseVideoInfo } from "./video";
+import { isNull, isNullOrUndefined, isString, isUndefined } from "../core/env";
 
 /**
  * 处理请求头中的 Authorization，如果是 refresh_token 则隐藏凭证并更新本地存储

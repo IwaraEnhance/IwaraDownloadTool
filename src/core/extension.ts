@@ -1,5 +1,5 @@
 import "./env"
-import { i18nList } from "./i18n";
+import { i18nList } from "../i18n";
 import { config } from "./config";
 import { originalAddEventListener, originalFetch } from "./hijack";
 import { delay, isArray, isNullOrUndefined, prune } from "./env";

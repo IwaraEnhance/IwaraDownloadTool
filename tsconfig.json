@@ -24,6 +24,7 @@
     "src/types/*.d.ts",
     "src/css/*.css",
     "src/i18n/*.json",
-    "src/*.ts"
+    "src/data/*.json",
+    "src/**/*.ts"
   ]
 }

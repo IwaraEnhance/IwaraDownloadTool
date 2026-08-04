@@ -1,0 +1,37 @@
+@keyframes rainbow-horizontal {
+    0% {
+        background-position: 0% 0%;
+    }
+
+    100% {
+        background-position: 200% 0%;
+    }
+}
+
+@keyframes rainbow-vertical {
+    0% {
+        background-position: 0% 0%;
+    }
+
+    100% {
+        background-position: 0% 200%;
+    }
+}
+
+.rainbow-text {
+    background-image:
+        linear-gradient(to right,
+            rgb(255, 64, 64),
+            rgb(255, 255, 64),
+            rgb(64, 255, 64),
+            rgb(64, 255, 255),
+            rgb(64, 64, 255),
+            rgb(255, 64, 255),
+            rgb(255, 64, 64));
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: rainbow-horizontal .8s infinite linear;
+    font-weight: bold;
+}

@@ -1,12 +1,23 @@
-import { Config, config } from "./config";
-import { db } from "./db";
-import { DownloadType, PageType, ToastType } from "./enum";
-import { isNullOrUndefined, delay, stringify } from "./env";
-import { renderNode, unlimitedFetch } from "./extension";
-import { check, getAuth, refreshToken, newToast, toastNode, aria2TaskCheckAndRestart, parseVideoInfo, addDownloadTask, analyzeDownloadTask, pushDownloadTask, importConfig, syncCachedToMediaCenter } from "./function";
-import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "./hijack";
-import { i18nList, type Language } from "./i18n";
-import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "./main";
+import { Config, config } from "../core/config";
+import { db } from "../core/db";
+import { DownloadType, PageType, ToastType } from "../core/enum";
+import { isNullOrUndefined, delay, stringify } from "../core/env";
+import { renderNode, unlimitedFetch } from "../core/extension";
+import { check } from "../network/envCheck";
+import { getAuth, refreshToken } from "../network/auth";
+import { newToast, toastNode } from "./notify";
+import { aria2TaskCheckAndRestart } from "../download/aria2";
+import { parseVideoInfo } from "../network/video";
+import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from "../download/downloadQueue";
+import { importConfig } from "./configUi";
+import { syncCachedToMediaCenter } from "../network/mediaCenter";
+import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "../core/hijack";
+import { i18nList, type Language } from "../i18n";
+import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "../main";
+import site from "../data/site.json";
+
+/** 一个月的毫秒数（计算值，JSON 只能存字面量无法表达，故保留在 TS） */
+const MONTH_MS = 30 * 24 * 60 * 60 * 1000
 
 export function uninjectCheckbox(element: Element | Node) {
     if (element instanceof HTMLElement) {
@@ -19,13 +30,17 @@ export function uninjectCheckbox(element: Element | Node) {
     }
 }
 export async function injectCheckbox(element: Element) {
-    let ID = (element.querySelector('a.videoTeaser__thumbnail') as HTMLLinkElement).href.toURL().pathname.split('/')[2]
+    const thumbnail = element.querySelector('a.videoTeaser__thumbnail') as HTMLLinkElement | null
+    if (isNullOrUndefined(thumbnail)) return
+    let ID = thumbnail.href.toURL().pathname.split('/')[2]
     if (isNullOrUndefined(ID)) return
     let info = await db.getVideoById(ID)
-    let Title = info?.Type === 'full' || info?.Type === 'partial' ? info?.Title : info?.RAW?.title ?? element.querySelector('.videoTeaser__title')?.getAttribute('title') ?? undefined;
-    let Alias = info?.Type === 'full' || info?.Type === 'partial' ? info?.Alias : info?.RAW?.user.name ?? element.querySelector('a.username')?.getAttribute('title') ?? undefined;
-    let Author = info?.Type === 'full' || info?.Type === 'partial' ? info?.Author : info?.RAW?.user.username ?? (element.querySelector('a.username') as HTMLLinkElement)?.href.toURL().pathname.split('/').pop()
-    let UploadTime = info?.Type === 'full' || info?.Type === 'partial' ? info?.UploadTime : new Date(info?.RAW?.updatedAt ?? 0).getTime()
+    const hasFullInfo = info?.Type === 'full' || info?.Type === 'partial'
+    const authorLink = element.querySelector('a.username') as HTMLLinkElement | null
+    let Title = hasFullInfo ? info?.Title : info?.RAW?.title ?? element.querySelector('.videoTeaser__title')?.getAttribute('title') ?? undefined;
+    let Alias = hasFullInfo ? info?.Alias : info?.RAW?.user.name ?? authorLink?.getAttribute('title') ?? undefined;
+    let Author = hasFullInfo ? info?.Author : info?.RAW?.user.username ?? authorLink?.href.toURL().pathname.split('/').pop()
+    let UploadTime = hasFullInfo ? info?.UploadTime : new Date(info?.RAW?.updatedAt ?? 0).getTime()
 
     let button = renderNode({
         nodeType: 'input',
@@ -55,15 +70,15 @@ export async function injectCheckbox(element: Element) {
             }
         }
     })
-    let item = element.querySelector('.videoTeaser__thumbnail')?.parentElement
+    let item = thumbnail.parentElement
     item?.style.setProperty('position', 'relative')
     pageSelectButtons.set(ID, button)
     originalNodeAppendChild.call(item, button)
 
     if (!isNullOrUndefined(Author)) {
         const AuthorInfo = await db.getFollowByUsername(Author)
-        if (AuthorInfo?.following && element.querySelector('.videoTeaser__thumbnail')?.querySelector('.follow') === null) {
-            originalNodeAppendChild.call(element.querySelector('.videoTeaser__thumbnail'), renderNode(
+        if (AuthorInfo?.following && thumbnail.querySelector('.follow') === null) {
+            originalNodeAppendChild.call(thumbnail, renderNode(
                 {
                     nodeType: 'div',
                     className: 'follow',
@@ -80,8 +95,8 @@ export async function injectCheckbox(element: Element) {
     // 检查 MediaCenter 映射，显示是否已下载（仅在配置了 MediaCenter 时启用）
     if (!config.mediaCenterApi.isEmpty() && !config.mediaCenterApiKey.isEmpty()) {
         const mediaCenterId = await db.getMediaCenterIdMap(ID);
-        if (!isNullOrUndefined(mediaCenterId) && !mediaCenterId.isEmpty() && element.querySelector('.videoTeaser__thumbnail')?.querySelector('.downloaded') === null) {
-            originalNodeAppendChild.call(element.querySelector('.videoTeaser__thumbnail'), renderNode(
+        if (!isNullOrUndefined(mediaCenterId) && !mediaCenterId.isEmpty() && thumbnail.querySelector('.downloaded') === null) {
+            originalNodeAppendChild.call(thumbnail, renderNode(
                 {
                     nodeType: 'div',
                     className: 'downloaded',
@@ -341,6 +356,9 @@ export class configEdit {
             ]
         })
     }
+    private appendAll(items: (Element | Node)[]) {
+        items.forEach(i => originalNodeAppendChild.call(this.interfacePage, i))
+    }
     private configChange(item: string) {
         switch (item) {
             case 'downloadType':
@@ -427,18 +445,16 @@ export class configEdit {
         ]
         switch (this.target.downloadType) {
             case DownloadType.Aria2:
-                downloadConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
-                aria2ConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll([...downloadConfigInput, ...aria2ConfigInput])
                 if (this.target.experimentalFeatures) {
-                    mediaCenterConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                    this.appendAll(mediaCenterConfigInput)
                 }
                 break
             case DownloadType.Iwaradl:
-                downloadConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
-                iwaradlConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll([...downloadConfigInput, ...iwaradlConfigInput])
                 break
             default:
-                downloadConfigInput.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll(downloadConfigInput)
                 break
         }
         if (this.target.checkPriority) {
@@ -551,7 +567,7 @@ export class menu {
             childs: `%#${name}#%`,
             events: {
                 click: (event: Event) => {
-                    !isNullOrUndefined(click) && click(name, event)
+                    if (!isNullOrUndefined(click)) click(name, event)
                     // 移动端：点击菜单项后自动收起菜单
                     if (self.isTouchDevice && config.autoCollapseMenu) {
                         setTimeout(() => self.interface.classList.remove('expanded'), 150);
@@ -563,14 +579,34 @@ export class menu {
         })
     }
 
+    /** 将所有按钮追加到菜单（移动已挂载的节点） */
+    private appendAll(items: (Element | Node)[]) {
+        items.forEach(i => originalNodeAppendChild.call(this.interfacePage, i))
+    }
+
+    /** 全选/全不选本页复选框 */
+    private selectAll(checked: boolean) {
+        unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
+            const button = element as HTMLInputElement
+            button.checked !== checked && button.click()
+        })
+    }
+
+    /** 反选本页复选框 */
+    private toggleSelect() {
+        unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
+            (element as HTMLInputElement).click()
+        })
+    }
+
     public async parseUnlistedAndPrivate() {
         if (!isLoggedIn()) return
-        const lastMonthTimestamp = Date.now() - 30 * 24 * 60 * 60 * 1000
+        const lastMonthTimestamp = Date.now() - MONTH_MS
         const thisMonthUnlistedAndPrivateVideos = await db.getFilteredVideos(lastMonthTimestamp, Infinity);
         let parseUnlistedAndPrivateVideos: VideoInfo[] = []
 
+        const MAX_FIND_PAGES = site.maxFindPages;
         let pageCount = 0;
-        const MAX_FIND_PAGES = 64;
         GM_getValue('isDebug') && originalConsole.debug(`[Debug] Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
 
         while (pageCount < MAX_FIND_PAGES) {
@@ -650,18 +686,6 @@ export class menu {
         let importConfigButton = this.button('importConfig', (name, event) => {
             importConfig()
         })
-        renderNode({
-            nodeType: 'button',
-            childs: '%#importConfig#%',
-            attributes: {
-                title: i18nList[config.language].save
-            },
-            events: {
-                click: async () => {
-
-                }
-            }
-        })
 
         let baseButtons = [
             manualDownloadButton,
@@ -682,28 +706,19 @@ export class menu {
             }
         })
 
-        let deselectAllButton = this.button('deselectAll', (name, event) => {
+        // 数据驱动取消全选：逐个 delete 触发 GMSyncDictionary.onDel 事件链
+        //   onDel → updateButtonState（DOM 复选框 checked 同步为 false）
+        //        → updateSelected（水印计数刷新）
+        //        → 跨页面广播 onSync（其他页面按钮状态同步）
+        // 相比直接遍历 .selectButton 触发 click，此方式避免重复的点击事件流
+        let deselectAllButton = this.button('deselectAll', () => {
             for (const id of selectList.keys()) {
                 selectList.delete(id)
             }
         })
-        let reverseSelectButton = this.button('reverseSelect', (name, event) => {
-            unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
-                (element as HTMLInputElement).click()
-            })
-        })
-        let selectThisButton = this.button('selectThis', (name, event) => {
-            unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
-                let button = element as HTMLInputElement
-                !button.checked && button.click()
-            })
-        })
-        let deselectThisButton = this.button('deselectThis', (name, event) => {
-            unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
-                let button = element as HTMLInputElement
-                button.checked && button.click()
-            })
-        })
+        let reverseSelectButton = this.button('reverseSelect', () => this.toggleSelect())
+        let selectThisButton = this.button('selectThis', () => this.selectAll(true))
+        let deselectThisButton = this.button('deselectThis', () => this.selectAll(false))
         let downloadSelectedButton = this.button('downloadSelected', (name, event) => {
             analyzeDownloadTask()
             newToast(ToastType.Info, {
@@ -728,16 +743,16 @@ export class menu {
             }))
         })
 
-        let aria2TaskCheckButton = this.button('aria2TaskCheck', (name, event) => {
+        let aria2TaskCheckButton = this.button('aria2TaskCheck', () => {
             aria2TaskCheckAndRestart()
         })
-        config.experimentalFeatures && originalNodeAppendChild.call(this.interfacePage, aria2TaskCheckButton)
+        if (config.experimentalFeatures) {
+            originalNodeAppendChild.call(this.interfacePage, aria2TaskCheckButton)
+        }
 
         switch (this.pageType) {
             case PageType.Video:
-                originalNodeAppendChild.call(this.interfacePage, downloadThisButton)
-                selectButtons.map(i => originalNodeAppendChild.call(this.interfacePage, i))
-                baseButtons.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll([downloadThisButton, ...selectButtons, ...baseButtons])
                 break
             case PageType.Search:
             case PageType.Profile:
@@ -747,8 +762,7 @@ export class menu {
             case PageType.Playlist:
             case PageType.Favorites:
             case PageType.Account:
-                selectButtons.map(i => originalNodeAppendChild.call(this.interfacePage, i))
-                baseButtons.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll([...selectButtons, ...baseButtons])
                 break;
             case PageType.Page:
             case PageType.Forum:
@@ -757,7 +771,7 @@ export class menu {
             case PageType.ForumSection:
             case PageType.ForumThread:
             default:
-                baseButtons.map(i => originalNodeAppendChild.call(this.interfacePage, i))
+                this.appendAll(baseButtons)
                 break;
         }
 
@@ -780,6 +794,8 @@ export class menu {
         }
     }
 }
+const DEBUG_SWITCH_THRESHOLD = 5
+
 export class waterMark {
     debugSwitchCount = 0
     selected = renderNode({
@@ -790,7 +806,7 @@ export class waterMark {
         nodeType: 'span',
         childs: `${GM_getValue('isDebug') ? `${i18nList[config.language].isDebug} ${GM_info.scriptHandler}` : ''}`
     })
-    bdoy = renderNode({
+    body = renderNode({
         nodeType: 'p',
         className: 'fixed-bottom-right',
         childs: [
@@ -801,7 +817,7 @@ export class waterMark {
         events: {
             click: (e: Event) => {
                 if (GM_getValue('isDebug')) return
-                if (this.debugSwitchCount < 5) {
+                if (this.debugSwitchCount < DEBUG_SWITCH_THRESHOLD) {
                     this.debugSwitchCount++
                     return
                 } else {
@@ -812,10 +828,7 @@ export class waterMark {
             }
         }
     })
-    constructor() {
-        return this
-    }
     public inject() {
-        originalNodeAppendChild.call(unsafeWindow.document.body, this.bdoy)
+        originalNodeAppendChild.call(unsafeWindow.document.body, this.body)
     }
 }

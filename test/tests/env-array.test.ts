@@ -1,5 +1,5 @@
 import '../setup.ts';
-import '../../src/env.ts';
+import '../../src/core/env.ts';
 import { Test, TestGroup } from '../framework.ts';
 
 const arrayTestGroup = new TestGroup('Array 原型方法', 'Array.prototype 工具方法测试');
@@ -160,7 +160,7 @@ arrayTestGroup.add(new Test('union 两个空数组', 'async', function () {
 arrayTestGroup.add(new Test('intersect 一个空数组', 'async', function () {
     const result = [1, 2].intersect([]);
     this.assertEqual(result.length, 0);
-    const result2 = [].intersect([1, 2]);
+    const result2 = ([] as number[]).intersect([1, 2]);
     this.assertEqual(result2.length, 0);
 }));
 
