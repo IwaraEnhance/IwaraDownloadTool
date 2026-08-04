@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "dayjs": "^1.11.20",
-    "idb": "^8.0.3",
-    "tldts": "^7.0.29"
+    "idb": "^8.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",

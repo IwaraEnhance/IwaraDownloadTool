@@ -11,6 +11,8 @@
 - Automatically follow the authors of selected videos <sup>\*Disabled by default, needs to be enabled manually</sup>
 - Automatically like/favorite selected videos <sup>\*Disabled by default, needs to be enabled manually</sup>
 - Forced display of unlisted and private videos <sup>\*Requires following the author</sup>
+- Filters out unlisted and private videos on the subscriptions page <sup>\*Disabled by default, mutually exclusive with forced display</sup>
+- Aria2 task auto-tracking: automatically takes over existing tasks and restarts slow ones
 - Supports downloading private videos <sup>\*Requires an account that is friends with the author</sup>
 - Supports downloading hidden videos <sup>\*Requires knowing the video ID</sup>
 
@@ -40,25 +42,34 @@
 
 #### Available Path Variables
 
-- Download Time %#NowTime#%
-- Upload Time %#UploadTime#%
-- Video Title %#TITLE#%
-- Video ID %#ID#%
-- Video Author %#AUTHOR#%
-- Video Author (Nickname) %#ALIAS#%
-- Quality %#QUALITY#%
+| Variable       | Description         | Example                           | Output                |
+| -------------- | ------------------- | --------------------------------- | --------------------- |
+| %#NowTime#%    | Download time       | %#NowTime:YYYY-MM-DD#%            | 2022-02-22            |
+| %#UploadTime#% | Upload time         | %#UploadTime:YYYY-MM-DD+HH.mm.ss#% | 2022-02-22+22.22.22 |
+| %#TITLE#%      | Video title         | %#TITLE#%                         | Example Title         |
+| %#ID#%         | Video ID            | %#ID#%                            | ExampleID             |
+| %#AUTHOR#%     | Video author        | %#AUTHOR#%                        | ExampleAuthor         |
+| %#ALIAS#%      | Author nickname     | %#ALIAS#%                         | ExampleAlias          |
+| %#QUALITY#%    | Quality             | %#QUALITY#%                       | Source                |
 
-  Example:  
-  `%#NowTime:YYYY-MM-DD#%_%#AUTHOR#%_%#UploadTime:YYYY-MM-DD#%_%#TITLE#%_%#QUALITY#%[%#ID#%].MP4`
+Full example:
 
-  Output:
+`/Iwara/%#AUTHOR#%/%#NowTime:YYYY-MM-DD#%/(%#ALIAS#%)%#UploadTime:YYYY-MM-DD+HH.mmss#%_%#TITLE#%_%#QUALITY#%[%#ID#%].MP4`
 
-  `2024-02-19_ExampleAuthorID_2024-02-18_ExampleTitle_Source[ExampleID].MP4`
+Output:
+
+`/Iwara/ExampleAuthor/2022-02-22/(ExampleAlias)2022-02-22+22.22.22_Example Title_Source[ExampleID].MP4`
 
 ## Dependencies
 
+### Runtime Dependencies
+
 - [day.js](https://github.com/iamkun/dayjs) - [MIT License](https://opensource.org/licenses/MIT)
 - [idb](https://github.com/jakearchibald/idb) - [ISC License](https://opensource.org/license/isc)
+- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT) <sup>\*Vendored source, see src/core/env.ts</sup>
+
+### Dev Dependencies
+
+- [TypeScript](https://github.com/microsoft/TypeScript) - [Apache-2.0](https://opensource.org/licenses/Apache-2.0)
 - [esbuild](https://github.com/evanw/esbuild) - [MIT License](https://opensource.org/licenses/MIT)
-- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT)
-- [aria2rpc](https://github.com/pboymt/aria2rpc)
+- [tsx](https://github.com/privatenumber/tsx) - [MIT License](https://opensource.org/licenses/MIT)

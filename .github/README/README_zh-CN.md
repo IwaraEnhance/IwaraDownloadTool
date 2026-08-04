@@ -11,6 +11,8 @@
 - 自动关注选中的视频作者 <sup>\*默认关闭，需手动开启该功能</sup>
 - 自动点赞/喜欢选中的视频 <sup>\*默认关闭，需手动开启该功能</sup>
 - 不公开和私有视频强制显示 <sup>\*需要关注作者</sup>
+- 过滤订阅页中的不公开和私有视频 <sup>\*默认关闭，与强制显示互斥</sup>
+- Aria2 任务自动追踪：自动接管现有任务，速度过慢时自动重启
 - 支持下载私有视频 <sup>\*需要使用已与作者成为好友的账号进行下载</sup>
 - 支持下载隐藏视频 <sup>\*需要知道视频ID</sup>
 
@@ -54,8 +56,14 @@
 
 ## 依赖库
 
+### 运行时依赖
+
 - [day.js](https://github.com/iamkun/dayjs) - [MIT License](https://opensource.org/licenses/MIT)
 - [idb](https://github.com/jakearchibald/idb) - [ISC License](https://opensource.org/license/isc)
+- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT) <sup>\*内嵌源码（vendored），见 src/core/env.ts</sup>
+
+### 开发依赖
+
+- [TypeScript](https://github.com/microsoft/TypeScript) - [Apache-2.0](https://opensource.org/licenses/Apache-2.0)
 - [esbuild](https://github.com/evanw/esbuild) - [MIT License](https://opensource.org/licenses/MIT)
-- [emoji-regex](https://github.com/slevithan/emoji-regex-xs) - [MIT License](https://opensource.org/licenses/MIT)
-- [aria2rpc](https://github.com/pboymt/aria2rpc)
+- [tsx](https://github.com/privatenumber/tsx) - [MIT License](https://opensource.org/licenses/MIT)

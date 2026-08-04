@@ -26,9 +26,10 @@ import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from ".
 import { PageType, ToastType, VersionState } from "./core/enum";
 import { createInterceptedFetch } from "./network/fetchInterceptor";
 
-import { getDomain } from "tldts";
-export var domain = getDomain(unsafeWindow.location.href) ?? ''
-if (!site.supportedDomains.includes(domain)) {
+const hostname = unsafeWindow.location.hostname
+// 从支持域名中匹配注册域名（无需 tldts：对固定域名直接用 hostname 相等/后缀匹配）
+export var domain = site.supportedDomains.find(d => hostname === d || hostname.endsWith('.' + d)) ?? ''
+if (!domain) {
     throw "Not target"
 }
 
