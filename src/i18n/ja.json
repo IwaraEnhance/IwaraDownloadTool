@@ -51,7 +51,6 @@
     "settings": "設定を開く",
     "downloadThis": "現在の動画をダウンロード",
     "manualDownload": "手動ダウンロード",
-    "aria2TaskCheck": "Aria2タスク再起動",
     "reverseSelect": "このページで選択を反転",
     "deselectThis": "このページの選択を解除",
     "deselectAll": "すべての選択を解除",
@@ -119,7 +118,9 @@
     "parsingFailed": "動画情報の解析に失敗！",
     "autoFollowFailed": "動画作者の自動フォローに失敗！",
     "autoLikeFailed": "動画の自動いいねに失敗！",
-    "aria2TaskRestartError": "再起動が必要なダウンロードタスクの読み取りまたは分析中にエラーが発生しました！",
-    "noAria2TasksNeedRestart": "再起動が必要なダウンロードタスクは見つかりませんでした！",
-    "duplicateTaskAnalysisError": "重複したダウンロードタスクの分析中にエラーが発生しました！"
+    "duplicateTaskAnalysisError": "重複したダウンロードタスクの分析中にエラーが発生しました！",
+    "aria2TrackComplete": "ダウンロード完了",
+    "aria2TrackRestart": "ダウンロードに失敗しました。自動再開しました",
+    "aria2TrackRestartSlow": "ダウンロード速度が遅すぎるため、自動再開しました",
+    "aria2TrackRestartPaused": "タスクが一時停止したため、自動再開しました"
 }

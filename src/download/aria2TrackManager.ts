@@ -1,14 +1,19 @@
 import { delay, isConvertibleToNumber, isNullOrUndefined, isString, prune, stringify, UUID } from "../core/env";
 import { GMSyncDictionary } from "../core/class";
-import { DownloadType } from "../core/enum";
+import { DownloadType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { db } from "../core/db";
 import { GMLock } from "../core/gmLock";
-import { originalAddEventListener, originalConsole } from "../core/hijack";
+import { originalAddEventListener } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { unlimitedFetch } from "../core/extension";
 import { aria2API, aria2TaskExtractVideoID } from "./aria2";
 import { getDownloadPath } from "./downloadPath";
 import { getMoreCompleteVideoInfo, parseVideoInfo } from "../network/video";
+import { newToast, toastNode } from "../ui/notify";
+
+const log = createLogger('Aria2Track');
+const mediaLog = createLogger('MediaCenter');
 
 /**
  * Aria2 任务管理器
@@ -30,8 +35,23 @@ const ARIA2_TRACK_MANAGER_TTL = 75_000;
 const ARIA2_TRACK_ELECTION_INTERVAL = 5_000;
 /** 任务队列扫描间隔（毫秒）：把 aria2 中尚未纳入队列的任务补入队列 */
 const ARIA2_TRACK_SCAN_INTERVAL = 60_000;
-/** 任务轮询间隔（毫秒）：每个 worker 每 30s 检查一次任务状态 */
-const ARIA2_TRACK_POLL_INTERVAL = 1000 * 10 * 3;
+/** 任务轮询间隔（毫秒）：按任务状态自适应——
+ * 下载中（active）用短间隔保持实时感知完成/错误/慢速；
+ * 等待/暂停（waiting/paused）用中等间隔等待状态变化；
+ * 任务不可达（无状态）用较长间隔退避，减少无效请求 */
+const ARIA2_TRACK_POLL_INTERVAL_ACTIVE = 1000 * 2;   // 2s：下载中，实时性最关键
+const ARIA2_TRACK_POLL_INTERVAL_IDLE = 1000 * 5;     // 5s：等待/暂停/初始未知
+const ARIA2_TRACK_POLL_INTERVAL_BACKOFF = 1000 * 10; // 10s：任务不可达退避
+
+/** 根据任务状态选择下一次轮询间隔：active 用短间隔保持实时，等待/暂停/初始用中等间隔，不可达退避 */
+function aria2TrackPollInterval(status?: string): number {
+    switch (status) {
+        case 'active': return ARIA2_TRACK_POLL_INTERVAL_ACTIVE;
+        case 'waiting':
+        case 'paused': return ARIA2_TRACK_POLL_INTERVAL_IDLE;
+        default: return status === undefined ? ARIA2_TRACK_POLL_INTERVAL_IDLE : ARIA2_TRACK_POLL_INTERVAL_BACKOFF;
+    }
+}
 /** 下载速度过慢判定阈值（字节/秒，64 KiB/s）：低于此速度视为“速度过慢”并重启任务 */
 export const ARIA2_SLOW_SPEED_THRESHOLD = 64 * 1024;
 /** 当前页面实例唯一的标识 */
@@ -100,8 +120,26 @@ export function getAria2Progress(status: Aria2.Status): number {
     return Math.min(1, Number(status.completedLength) / total);
 }
 
-/**
- * 管理器内的单任务处理循环：轮询 aria2 状态，异常自动重试，完成后移除队列并推送 MediaCenter。
+/** 任务状态 toast：按 videoId 固定 id，同任务新提示自动替换旧提示（避免轮询刷屏）。
+ * `%#...#%` 占位符由 toastNode/renderNode 自动替换为当前语言 */
+function trackStatusToast(videoId: string, title: string, type: ToastType, i18nKey: string): void {
+    newToast(type, {
+        id: `aria2Track-${videoId}`,
+        duration: 5000,
+        node: toastNode(`${title}[${videoId}] %#${i18nKey}#%`)
+    }).show()
+}
+
+/** debug：把下载速度格式化为可读字符串（B/s / KiB/s / MiB/s），无法计算时返回 '未知' */
+function formatAria2Speed(speed: any): string {
+    if (!isConvertibleToNumber(speed)) return '未知';
+    const n = Number(speed);
+    if (n < 1024) return `${n} B/s`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB/s`;
+    return `${(n / 1024 / 1024).toFixed(2)} MiB/s`;
+}
+
+/** 管理器内的单任务处理循环：轮询 aria2 状态，异常自动重试，完成后移除队列并推送 MediaCenter。
  * 仅当本页仍是管理器、且任务仍在队列中时才执行动作；
  * 失去管理器资格或任务被移除时，worker 在下一轮自行退出，无需外部停止信号。
  */
@@ -113,16 +151,21 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
         info = getMoreCompleteVideoInfo(info ?? { Type: 'init', ID: task.videoId }, parsed);
     }
     if (info.Type !== 'full') {
-        originalConsole.warn(`[Aria2Track] ${task.videoId} 初始化解析失败 (${info.Type})，从队列移除`);
+        log.warn(`${task.videoId} 初始化解析失败 (${info.Type})，从队列移除`);
         removeAria2TrackTask(task.videoId);
         return;
     }
     let videoInfo = info as FullVideoInfo;
     let currentGid = task.gid;
     let consecutiveFailures = 0;
+    let lastStatus: string | undefined; // 上一轮任务状态，用于自适应轮询间隔
+    let lastLoggedProgress = -1;        // 上次打印进度的百分点（0-100），用于按进度间隔输出 debug 日志
+
+    log.debug(`${task.videoId} 开始处理 (gid=${task.gid}, title=${videoInfo.Title})`);
 
     while (true) {
-        await delay(ARIA2_TRACK_POLL_INTERVAL);
+        // 状态自适应轮询：active 下载中用短间隔保持实时，等待/暂停用中等间隔，不可达退避
+        await delay(aria2TrackPollInterval(lastStatus));
         // 本页仍是管理器且任务仍在队列中才继续（失去则自行让位）
         if (!aria2TrackLock.isHeld(ARIA2_TRACK_MANAGER_LOCK)) return;
         if (!hasAria2TrackTask(task.videoId)) return;
@@ -136,22 +179,38 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
 
             if (!status?.status) {
                 // 持续无响应不移除任务，继续轮询重试（任务可能暂时不可达）
+                lastStatus = undefined; // 不可达 → 退避轮询
                 continue;
             }
             consecutiveFailures = 0;
 
+            // debug：状态转换时打印完整状态；active 下载中按 5% 进度间隔打印进展，避免每轮刷屏
+            // （log.debug 内部已检查 isDebug 开关）
+            const progress = getAria2Progress(status);
+            if (lastStatus !== status.status) {
+                log.debug(`${task.videoId} 状态: ${lastStatus ?? '初始'} → ${status.status} (gid=${currentGid}, 进度=${(progress * 100).toFixed(1)}%, 速度=${formatAria2Speed(status.downloadSpeed)})`);
+            } else if (status.status === 'active') {
+                const pct = Math.floor(progress * 100);
+                if (pct - lastLoggedProgress >= 5) {
+                    lastLoggedProgress = pct;
+                    log.debug(`${task.videoId} 下载中: 进度=${(progress * 100).toFixed(1)}%, 速度=${formatAria2Speed(status.downloadSpeed)})`);
+                }
+            }
+            lastStatus = status.status; // 记录当前状态，驱动下一轮轮询间隔
+
             switch (status.status) {
                 case 'complete':
-                    GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${task.videoId} 下载完成`);
+                    log.debug(`${task.videoId} 下载完成`);
                     if (config.experimentalFeatures) {
                         await pushToMediaCenter(videoInfo);
                     }
                     removeAria2TrackTask(task.videoId);
+                    trackStatusToast(task.videoId, videoInfo.Title, ToastType.Info, 'aria2TrackComplete');
                     return; // 完成，从队列移除
 
                 case 'error':
                 case 'removed':
-                    originalConsole.warn(`[Aria2Track] ${task.videoId} 任务 ${status.status}，重新创建下载`);
+                    log.warn(`${task.videoId} 任务 ${status.status}，重新创建下载`);
                     try {
                         const freshInfo = await parseVideoInfo({ Type: 'init', ID: task.videoId });
                         if (freshInfo.Type === 'full') {
@@ -160,6 +219,8 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                             if (!newRes?.result?.isEmpty()) {
                                 currentGid = newRes.result;
                                 updateAria2TrackTaskGid(task.videoId, currentGid);
+                                log.debug(`${task.videoId} 任务重建成功，新 gid=${currentGid}`);
+                                trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestart');
                             }
                         }
                     } catch { /* fall through, will retry next poll */ }
@@ -170,9 +231,12 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                         // 下载进度 > 98% 时豁免（接近完成不重启）；但速度为 0 不豁免
                         const speed = Number(status.downloadSpeed);
                         if (speed === 0 || getAria2Progress(status) <= 0.98) {
-                            GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${task.videoId} 速度过慢，重启`);
+                            log.debug(`${task.videoId} 速度过慢，重启`);
                             const freshActive = await restartAria2Task(currentGid, task.videoId, status);
-                            if (freshActive) videoInfo = freshActive;
+                            if (freshActive) {
+                                videoInfo = freshActive;
+                                trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartSlow');
+                            }
                         }
                     }
                     break;
@@ -183,19 +247,22 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
 
                 case 'paused':
                     if (await isAria2QueueFull()) {
-                        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${task.videoId} 队列已满，暂不重启`);
+                        log.debug(`${task.videoId} 队列已满，暂不重启`);
                     } else {
-                        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] ${task.videoId} 已暂停，重启`);
+                        log.debug(`${task.videoId} 已暂停，重启`);
                         const freshPaused = await restartAria2Task(currentGid, task.videoId, status);
-                        if (freshPaused) videoInfo = freshPaused;
+                        if (freshPaused) {
+                            videoInfo = freshPaused;
+                            trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartPaused');
+                        }
                     }
                     break;
             }
         } catch (error) {
-            originalConsole.warn(`[Aria2Track] 追踪异常 ${currentGid}:`, stringify(error));
+            log.warn(`追踪异常 ${currentGid}:`, stringify(error));
             consecutiveFailures++;
             if (consecutiveFailures > 5) {
-                originalConsole.warn(`[Aria2Track] 任务 ${currentGid} 持续异常，从队列移除`);
+                log.warn(`任务 ${currentGid} 持续异常，从队列移除`);
                 removeAria2TrackTask(task.videoId);
                 return;
             }
@@ -208,7 +275,7 @@ function syncAria2TrackWorkers(): void {
     for (const task of aria2TrackQueue.valuesArray()) {
         if (aria2TrackWorkers.has(task.videoId)) continue;
         aria2TrackWorkers.add(task.videoId);
-        GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] 管理器开始处理 ${task.videoId} (gid=${task.gid})`);
+        log.debug(`管理器开始处理 ${task.videoId} (gid=${task.gid})`);
         processAria2TrackTask(task).finally(() => {
             aria2TrackWorkers.delete(task.videoId);
         });
@@ -224,7 +291,7 @@ async function tryBecomeAria2TrackManager(): Promise<void> {
     aria2TrackManagerLoopRunning = true; // 同步置位，防止并发重复启动管理循环
     try {
         if (!aria2TrackLock.acquire(ARIA2_TRACK_MANAGER_LOCK, ARIA2_TRACK_MANAGER_TTL)) return;
-        GM_getValue('isDebug') && originalConsole.debug('[Aria2Track] 本页成为管理器，接管整个队列');
+        log.debug('本页成为管理器，接管整个队列');
         await startAria2TrackManagerLoop();
     } finally {
         aria2TrackManagerLoopRunning = false;
@@ -239,7 +306,7 @@ async function startAria2TrackManagerLoop(): Promise<void> {
         syncAria2TrackWorkers();
     }
     // 失去管理器资格：worker 会在下一轮通过 isHeld() 自行退出
-    GM_getValue('isDebug') && originalConsole.debug('[Aria2Track] 管理器锁过期/被抢占，停止处理队列');
+    log.debug('管理器锁过期/被抢占，停止处理队列');
 }
 
 /** 扫描 aria2 现有任务，把尚未纳入队列且未推送过的任务补入队列 */
@@ -255,6 +322,7 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
         const allTasks = [...(activeRes.result ?? []), ...(stoppedRes.result ?? [])]
             .filter(t => isNullOrUndefined(t.bittorrent));
 
+        let enqueued = 0; // 本轮新纳入队列的任务数（debug 统计）
         for (const task of allTasks) {
             const videoId = aria2TaskExtractVideoID(task);
             if (isNullOrUndefined(videoId) || videoId.isEmpty()) continue;
@@ -275,7 +343,7 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
                 info = await parseVideoInfo(info);
             }
             if (info.Type !== 'full') {
-                originalConsole.warn(`[Aria2Track] 入队 ${videoId} 解析失败 (${info.Type})，跳过`);
+                log.warn(`入队 ${videoId} 解析失败 (${info.Type})，跳过`);
                 continue;
             }
 
@@ -291,11 +359,13 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
                 'header': ['Cookie:' + unsafeWindow.document.cookie],
             });
 
-            GM_getValue('isDebug') && originalConsole.debug(`[Aria2Track] 现有任务 ${videoId} 已纳入队列 (gid=${task.gid})`);
+            log.debug(`现有任务 ${videoId} 已纳入队列 (gid=${task.gid})`);
             enqueueAria2TrackTask(videoId, task.gid, downloadParams);
+            enqueued++;
         }
+        log.debug(`扫描完成: aria2 共 ${allTasks.length} 个任务，新纳入队列 ${enqueued} 个`);
     } catch (error) {
-        originalConsole.warn('[Aria2Track] 扫描 aria2 任务失败:', stringify(error));
+        log.warn('扫描 aria2 任务失败:', stringify(error));
     }
 }
 
@@ -319,7 +389,7 @@ async function restartAria2Task(gid: string, videoId: string, task: Aria2.Status
     try {
         const freshInfo = await parseVideoInfo({ Type: 'init', ID: videoId });
         if (freshInfo.Type !== 'full') {
-            originalConsole.warn(`[Aria2Track] restartAria2Task ${videoId} 重新解析失败 (${freshInfo.Type})`);
+            log.warn(`restartAria2Task ${videoId} 重新解析失败 (${freshInfo.Type})`);
             return undefined;
         }
         const oldUris = (task.files?.[0]?.uris ?? []).map((u: any) => u.uri);
@@ -327,7 +397,7 @@ async function restartAria2Task(gid: string, videoId: string, task: Aria2.Status
         await aria2API('aria2.unpause', [gid]);
         return freshInfo;
     } catch (error) {
-        originalConsole.warn(`[Aria2Track] restartAria2Task 失败 ${gid}:`, stringify(error));
+        log.warn(`restartAria2Task 失败 ${gid}:`, stringify(error));
         return undefined;
     }
 }
@@ -367,23 +437,23 @@ export async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId:
                 if (conflict.existingId && !conflict.existingId.isEmpty()) {
                     mediaCenterId = conflict.existingId;
                     await db.putMediaCenterIdMap(videoInfo.ID, mediaCenterId);
-                    GM_getValue('isDebug') && originalConsole.debug(`[MediaCenter] createMedia 409, reuse existing ${videoInfo.ID} → ${mediaCenterId}`);
+                    mediaLog.debug(`createMedia 409, reuse existing ${videoInfo.ID} → ${mediaCenterId}`);
                 } else {
-                    originalConsole.warn(`[MediaCenter] createMedia 409 but no existingId for ${videoInfo.ID}: ${conflict.error}`);
+                    mediaLog.warn(`createMedia 409 but no existingId for ${videoInfo.ID}: ${conflict.error}`);
                     return false;
                 }
             } else if (!createRes.ok) {
-                originalConsole.warn(`[MediaCenter] createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`);
+                mediaLog.warn(`createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`);
                 return false;
             } else {
                 // 201 Created 成功：{ message: 'media.importSuccess', id }
                 const createResult = await createRes.json() as { message?: string; error?: string; id?: string };
                 if (createResult.error) {
-                    originalConsole.warn(`[MediaCenter] createMedia error for ${videoInfo.ID}: ${createResult.error}`);
+                    mediaLog.warn(`createMedia error for ${videoInfo.ID}: ${createResult.error}`);
                     return false;
                 }
                 if (!createResult.id || createResult.id.isEmpty()) {
-                    originalConsole.warn(`[MediaCenter] createMedia returned no id for ${videoInfo.ID}`);
+                    mediaLog.warn(`createMedia returned no id for ${videoInfo.ID}`);
                     return false;
                 }
 
@@ -412,25 +482,25 @@ export async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId:
         });
 
         if (!updateRes.ok) {
-            originalConsole.warn(`[MediaCenter] updateMedia failed for ${videoInfo.ID}: ${updateRes.status} ${await updateRes.text()}`);
+            mediaLog.warn(`updateMedia failed for ${videoInfo.ID}: ${updateRes.status} ${await updateRes.text()}`);
             return false;
         }
 
         // 校验响应体：服务端成功时返回 { message: 'media.updateSuccess', media: {...} }
         const updateResult = await updateRes.json() as { message?: string; error?: string; media?: Record<string, unknown> };
         if (updateResult.error) {
-            originalConsole.warn(`[MediaCenter] updateMedia error for ${videoInfo.ID}: ${updateResult.error}`);
+            mediaLog.warn(`updateMedia error for ${videoInfo.ID}: ${updateResult.error}`);
             return false;
         }
         if (!updateResult.media) {
-            originalConsole.warn(`[MediaCenter] updateMedia returned no media for ${videoInfo.ID}`);
+            mediaLog.warn(`updateMedia returned no media for ${videoInfo.ID}`);
             return false;
         }
 
-        GM_getValue('isDebug') && originalConsole.debug('[Debug] MediaCenter metadata pushed:', videoInfo.ID, '→', mediaCenterId);
+        mediaLog.debug('metadata pushed:', videoInfo.ID, '→', mediaCenterId);
         return true;
     } catch (error) {
-        originalConsole.warn(`[MediaCenter] Push metadata error for ${videoInfo.ID}:`, stringify(error));
+        mediaLog.warn(`Push metadata error for ${videoInfo.ID}:`, stringify(error));
     }
 
     return false;

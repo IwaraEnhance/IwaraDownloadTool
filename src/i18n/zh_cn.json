@@ -51,7 +51,6 @@
     "settings": "打开设置",
     "downloadThis": "下载当前视频",
     "manualDownload": "手动下载",
-    "aria2TaskCheck": "Aria2任务重启",
     "reverseSelect": "本页反向选中",
     "deselectThis": "取消本页选中",
     "deselectAll": "取消所有选中",
@@ -120,7 +119,9 @@
     "parsingFailed": "视频信息解析失败！",
     "autoFollowFailed": "自动关注视频作者失败！",
     "autoLikeFailed": "自动点赞视频失败！",
-    "aria2TaskRestartError": "读取或分析需要重启的下载任务时出现错误！",
-    "noAria2TasksNeedRestart": "未发现需要重启的下载任务！",
-    "duplicateTaskAnalysisError": "分析重复的的下载任务时出现错误！"
+    "duplicateTaskAnalysisError": "分析重复的的下载任务时出现错误！",
+    "aria2TrackComplete": "下载完成",
+    "aria2TrackRestart": "下载失败，已自动重启",
+    "aria2TrackRestartSlow": "下载速度过慢，已自动重启",
+    "aria2TrackRestartPaused": "任务已暂停，已自动重启"
 }

@@ -18,8 +18,19 @@ export enum PageType {
     Subscriptions = 'subscriptions',
     Playlist = 'playlist',
     Favorites = 'favorites',
+    History = 'history',
     Search = 'search',
-    Account = 'account'
+    Account = 'account',
+    // 细分页面类型
+    Post = 'post',
+    Friends = 'friends',
+    Messages = 'messages',
+    Notifications = 'notifications',
+    Auth = 'auth',
+    Product = 'product',
+    Create = 'create',
+    Rule = 'rule',
+    Admin = 'admin'
 }
 export enum ToastType {
     Log,

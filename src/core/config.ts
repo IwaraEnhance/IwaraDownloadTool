@@ -1,9 +1,11 @@
 
 import "./env";
 import { isNullOrUndefined, stringify } from "./env";
-import { originalConsole } from "./hijack";
+import { createLogger } from "./log";
 import { DownloadType } from "./enum";
 import { i18nList, Language } from "../i18n";
+
+const log = createLogger('Config');
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,
@@ -85,7 +87,7 @@ export class Config {
                 if (property === 'language') {
                     return Config.getLanguage(value)
                 }
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                log.debug(`get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 return value
             },
             set: function (target, property: string, value) {
@@ -94,7 +96,7 @@ export class Config {
                     return true
                 }
                 GM_setValue(property, value)
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                log.debug(`set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 if (!isNullOrUndefined(target.configChange)) target.configChange(property)
                 return true
             }

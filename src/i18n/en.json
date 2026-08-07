@@ -51,7 +51,6 @@
     "settings": "Open Settings",
     "downloadThis": "Download current video",
     "manualDownload": "Manual Download",
-    "aria2TaskCheck": "Aria2 Task Restart",
     "reverseSelect": "Reverse selection on this page",
     "deselectThis": "Deselect on this page",
     "deselectAll": "Deselect all",
@@ -119,7 +118,9 @@
     "parsingFailed": "Failed to parse video information!",
     "autoFollowFailed": "Failed to auto-follow the video author!",
     "autoLikeFailed": "Failed to auto-like the video!",
-    "aria2TaskRestartError": "An error occurred while reading or analyzing download tasks that need to be restarted!",
-    "noAria2TasksNeedRestart": "No download tasks found that need to be restarted!",
-    "duplicateTaskAnalysisError": "An error occurred while analyzing duplicate download tasks!"
+    "duplicateTaskAnalysisError": "An error occurred while analyzing duplicate download tasks!",
+    "aria2TrackComplete": "Download complete",
+    "aria2TrackRestart": "Download failed, auto-restarted",
+    "aria2TrackRestartSlow": "Download speed too slow, auto-restarted",
+    "aria2TrackRestartPaused": "Task paused, auto-restarted"
 }

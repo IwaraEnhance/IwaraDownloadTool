@@ -10,9 +10,10 @@ import toastCSS from "./css/toast.css";
 import beautifyCSS from "./css/beautify.css";
 import widescreenCSS from "./css/widescreen.css"
 import { isNullOrUndefined, stringify } from "./core/env";
+import { createLogger } from "./core/log";
 import { i18nList } from "./i18n";
 import { config, Config } from "./core/config";
-import { originalAddEventListener, originalConsole, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
+import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
 import { Dictionary, GMSyncDictionary, Version } from "./core/class";
 import { db } from "./core/db";
 import { findElement, renderNode, unlimitedFetch } from "./core/extension";
@@ -24,8 +25,10 @@ import { syncCachedToMediaCenter } from "./network/mediaCenter";
 import { trackExistingAria2Tasks } from "./download/aria2TrackManager";
 import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui/ui";
 import { PageType, ToastType, VersionState } from "./core/enum";
+import { getPageTypeFromPath } from "./core/pageType";
 import { createInterceptedFetch } from "./network/fetchInterceptor";
 
+const log = createLogger('Main');
 const hostname = unsafeWindow.location.hostname
 // 从支持域名中匹配注册域名（无需 tldts：对固定域名直接用 hostname 相等/后缀匹配）
 export var domain = site.supportedDomains.find(d => hostname === d || hostname.endsWith('.' + d)) ?? ''
@@ -44,7 +47,7 @@ switch (GM_info.scriptHandler) {
 
 if (GM_getValue('isDebug')) {
     debugger
-    originalConsole.debug(stringify(GM_info))
+    log.debug(stringify(GM_info))
     // @ts-ignore
     unsafeWindow.syncCachedToMediaCenter = syncCachedToMediaCenter
     // @ts-ignore
@@ -58,7 +61,6 @@ if (GM_getValue('isDebug')) {
 unsafeWindow.fetch = createInterceptedFetch();
 
 export var apiEndpoint = site.apiEndpoint
-export const isPageType = (type: string): type is PageType => new Set(Object.values(PageType)).has(type as PageType)
 export var isLoggedIn = () => !(unsafeWindow.localStorage.getItem('token') ?? '').isEmpty()
 export var rating = () => localStorage.getItem('rating') ?? 'all'
 
@@ -87,31 +89,15 @@ selectList.onSync = () => {
 export function getSelectButton(id: string): HTMLInputElement | undefined {
     return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement
 }
-export function getPageType(mutationsList?: MutationRecord[]): PageType | undefined {
-    if (unsafeWindow.location.pathname.toLowerCase().endsWith('/search')) {
-        return PageType.Search;
-    }
-
-    const extractPageType = (page: Element | null | undefined): PageType | undefined => {
-        if (isNullOrUndefined(page)) return undefined;
-        if (page.classList.length < 2) return PageType.Page;
-        const pageClass = page.classList[1]?.split('-').pop();
-        return !isNullOrUndefined(pageClass) && isPageType(pageClass) ? (pageClass as PageType) : PageType.Page;
-    };
-
-    if (isNullOrUndefined(mutationsList)) {
-        return extractPageType(unsafeWindow.document.querySelector('.page'));
-    }
-
-    for (const mutation of mutationsList) {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-            return extractPageType(Array.from(mutation.addedNodes).find((node): node is Element => node instanceof Element && node.classList.contains('page')))
-        }
-    }
+export function getPageType(): PageType {
+    // URL 路由来源：browserHistory 走 pathname；hashHistory 走 hash（#/path 或 #!/path）。
+    // location.pathname 已是浏览器标准 URL 解析结果（不含 query/hash）；hash 需去掉 '#'/'!' 与 query 串。
+    const hashPath = unsafeWindow.location.hash.trimHead('#').trimHead('!').split('?')[0]
+    return getPageTypeFromPath(hashPath || unsafeWindow.location.pathname)
 }
 export function pageChange() {
-    pluginMenu.pageType = getPageType() ?? pluginMenu.pageType
-    GM_getValue('isDebug') && originalConsole.debug('[Debug]', pageSelectButtons)
+    pluginMenu.pageType = getPageType()
+    log.debug(pageSelectButtons)
 }
 
 
@@ -259,7 +245,7 @@ async function main() {
             GM_setValue('version', GM_info.script.version)
             unsafeWindow.location.reload()
         } catch (error) {
-            originalConsole.error(error)
+            log.error(error)
         }
         return
     }

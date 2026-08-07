@@ -6,15 +6,17 @@ import { renderNode, unlimitedFetch } from "../core/extension";
 import { check } from "../network/envCheck";
 import { getAuth, refreshToken } from "../network/auth";
 import { newToast, toastNode } from "./notify";
-import { aria2TaskCheckAndRestart } from "../download/aria2";
 import { parseVideoInfo } from "../network/video";
 import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from "../download/downloadQueue";
 import { importConfig } from "./configUi";
 import { syncCachedToMediaCenter } from "../network/mediaCenter";
-import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "../core/hijack";
+import { originalNodeAppendChild, originalAddEventListener } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { i18nList, type Language } from "../i18n";
 import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "../main";
 import site from "../data/site.json";
+
+const log = createLogger('UI');
 
 /** 一个月的毫秒数（计算值，JSON 只能存字面量无法表达，故保留在 TS） */
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
@@ -111,31 +113,92 @@ export async function injectCheckbox(element: Element) {
     }
 
     if (getPageType() === PageType.Playlist) {
-        let deletePlaylistItme = renderNode({
-            nodeType: 'button',
-            attributes: {
-                videoID: ID
-            },
-            childs: '%#delete#%',
-            className: 'deleteButton',
-            events: {
-                click: async (event: Event) => {
-                    if ((await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
-                        method: 'DELETE',
-                        headers: await getAuth()
-                    })).ok) {
-                        newToast(ToastType.Info, { text: `${Title} %#deleteSucceed#%`, close: true }).show()
-                        deletePlaylistItme.remove()
+        // 仅在当前用户是该播放列表的所有者时才显示删除按钮
+        if (await isCurrentUserPlaylistOwner(unsafeWindow.location.pathname.split('/')[2])) {
+            let deletePlaylistItme = renderNode({
+                nodeType: 'button',
+                attributes: {
+                    videoID: ID
+                },
+                childs: '%#delete#%',
+                className: 'deleteButton',
+                events: {
+                    click: async (event: Event) => {
+                        if ((await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
+                            method: 'DELETE',
+                            headers: await getAuth()
+                        })).ok) {
+                            newToast(ToastType.Info, { text: `${Title} %#deleteSucceed#%`, close: true }).show()
+                            deletePlaylistItme.remove()
+                        }
+                        event.preventDefault()
+                        event.stopPropagation()
+                        event.stopImmediatePropagation()
+                        return false
                     }
-                    event.preventDefault()
-                    event.stopPropagation()
-                    event.stopImmediatePropagation()
-                    return false
                 }
-            }
-        })
-        originalNodeAppendChild.call(item, deletePlaylistItme)
+            })
+            originalNodeAppendChild.call(item, deletePlaylistItme)
+        }
     }
+}
+
+// ── 播放列表所有者判断（用于决定是否显示删除按钮） ──
+// 当前登录用户缓存（Promise 缓存，避免并发重复请求）
+let localUserPromise: Promise<Iwara.User | null> | null = null
+// 播放列表所有者 ID 缓存（按 playlistId 缓存 Promise）
+let playlistOwnerPromise: { playlistId: string, promise: Promise<string> } | null = null
+
+/** 获取当前登录用户（缓存） */
+function getLocalUser(): Promise<Iwara.User | null> {
+    if (localUserPromise === null) {
+        localUserPromise = (async () => {
+            try {
+                if (!isLoggedIn()) return null
+                const res = await unlimitedFetch(`https://${apiEndpoint}/user`, {
+                    method: 'GET',
+                    headers: await getAuth()
+                })
+                if (!res.ok) return null
+                return (await res.json() as Iwara.LocalUser).user ?? null
+            } catch (error) {
+                log.warn('Failed to get local user:', error)
+                return null
+            }
+        })()
+    }
+    return localUserPromise
+}
+
+/** 获取播放列表所有者的用户 ID（按播放列表 ID 缓存） */
+function getPlaylistOwnerId(playlistId: string): Promise<string> {
+    if (playlistOwnerPromise?.playlistId !== playlistId) {
+        playlistOwnerPromise = {
+            playlistId,
+            promise: (async () => {
+                try {
+                    const res = await unlimitedFetch(`https://${apiEndpoint}/playlist/${playlistId}`, {
+                        method: 'GET',
+                        headers: await getAuth()
+                    })
+                    if (!res.ok) return ''
+                    return (await res.json() as Iwara.Playlist).playlist?.user?.id ?? ''
+                } catch (error) {
+                    log.warn('Failed to get playlist owner:', error)
+                    return ''
+                }
+            })()
+        }
+    }
+    return playlistOwnerPromise.promise
+}
+
+/** 判断当前用户是否为指定播放列表的所有者 */
+async function isCurrentUserPlaylistOwner(playlistId: string): Promise<boolean> {
+    const localUser = await getLocalUser()
+    if (isNullOrUndefined(localUser)) return false
+    const ownerId = await getPlaylistOwnerId(playlistId)
+    return ownerId !== '' && localUser.id === ownerId
 }
 
 
@@ -482,7 +545,7 @@ export class menu {
                     if (isNullOrUndefined(value) || target.pageType === value) return true
                     const ok = Reflect.set(target, prop, value)
                     this.pageChange()
-                    GM_getValue('isDebug') && originalConsole.debug(`[Debug] Page change to ${this.pageType}`)
+                    log.debug(`Page change to ${this.pageType}`)
                     return ok
                 }
                 return Reflect.set(target, prop, value)
@@ -556,7 +619,7 @@ export class menu {
             body.interface.classList.add('expanded');
         }
 
-        body.observer = new MutationObserver((mutationsList) => body.pageType = getPageType(mutationsList) ?? body.pageType)
+        body.observer = new MutationObserver(() => body.pageType = getPageType())
         body.pageType = PageType.Page
         return body
     }
@@ -607,10 +670,10 @@ export class menu {
 
         const MAX_FIND_PAGES = site.maxFindPages;
         let pageCount = 0;
-        GM_getValue('isDebug') && originalConsole.debug(`[Debug] Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
+        log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
 
         while (pageCount < MAX_FIND_PAGES) {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Fetching page ${pageCount}.`);
+            log.debug(`Fetching page ${pageCount}.`);
             const response = await unlimitedFetch(
                 `https://${apiEndpoint}/videos?subscribed=true&limit=50&rating=${rating()}&page=${pageCount}`,
                 { method: 'GET', headers: await getAuth() },
@@ -620,40 +683,40 @@ export class menu {
                     onRetry: async () => { await refreshToken() }
                 }
             );
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Received response, parsing JSON.');
+            log.debug('Received response, parsing JSON.');
             const data = (await response.json() as Iwara.IPage).results as Iwara.Video[];
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Page ${pageCount} returned ${data.length} videos.`);
+            log.debug(`Page ${pageCount} returned ${data.length} videos.`);
             data.forEach(info => info.user.following = true);
             const videoPromises = data.map(info => parseVideoInfo({
                 Type: 'cache',
                 ID: info.id,
                 RAW: info
             }));
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Initializing VideoInfo promises.');
+            log.debug('Initializing VideoInfo promises.');
             const videoInfos = await Promise.all(videoPromises);
             parseUnlistedAndPrivateVideos.push(...videoInfos);
             let test = videoInfos.filter(i => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] All VideoInfo objects initialized.');
+            log.debug('All VideoInfo objects initialized.');
             if (test && thisMonthUnlistedAndPrivateVideos.intersect(videoInfos, 'ID').any()) {
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] Found private video on page ${pageCount}.`);
+                log.debug(`Found private video on page ${pageCount}.`);
                 break;
             }
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Latest private video not found on page ${pageCount}, continuing.`);
+            log.debug(`Latest private video not found on page ${pageCount}, continuing.`);
             pageCount++;
 
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Incremented page to ${pageCount}, delaying next fetch.`);
+            log.debug(`Incremented page to ${pageCount}, delaying next fetch.`);
             await delay(100);
         }
-        GM_getValue('isDebug') && originalConsole.debug('[Debug] Fetch loop ended. Start updating the database');
+        log.debug('Fetch loop ended. Start updating the database');
         const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map(v => v.ID));
         const toUpdate = parseUnlistedAndPrivateVideos.difference(
             existingVideos.filter(v => v.Type === 'full'), 'ID')
         if (toUpdate.any()) {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Need to update ${toUpdate.length} pieces of data.`);
+            log.debug(`Need to update ${toUpdate.length} pieces of data.`);
             await db.bulkPutVideos(toUpdate)
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Update Completed.`);
+            log.debug(`Update Completed.`);
         } else {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] No need to update data.`);
+            log.debug(`No need to update data.`);
         }
     }
 
@@ -743,13 +806,6 @@ export class menu {
             }))
         })
 
-        let aria2TaskCheckButton = this.button('aria2TaskCheck', () => {
-            aria2TaskCheckAndRestart()
-        })
-        if (config.experimentalFeatures) {
-            originalNodeAppendChild.call(this.interfacePage, aria2TaskCheckButton)
-        }
-
         switch (this.pageType) {
             case PageType.Video:
                 this.appendAll([downloadThisButton, ...selectButtons, ...baseButtons])
@@ -761,6 +817,7 @@ export class menu {
             case PageType.Subscriptions:
             case PageType.Playlist:
             case PageType.Favorites:
+            case PageType.History:
             case PageType.Account:
                 this.appendAll([...selectButtons, ...baseButtons])
                 break;
@@ -770,6 +827,15 @@ export class menu {
             case PageType.ImageList:
             case PageType.ForumSection:
             case PageType.ForumThread:
+            case PageType.Post:
+            case PageType.Friends:
+            case PageType.Messages:
+            case PageType.Notifications:
+            case PageType.Auth:
+            case PageType.Product:
+            case PageType.Create:
+            case PageType.Rule:
+            case PageType.Admin:
             default:
                 this.appendAll(baseButtons)
                 break;
@@ -779,7 +845,7 @@ export class menu {
         if (config.addUnlistedAndPrivate && !config.filterUnlistedAndPrivate && this.pageType === PageType.VideoList) {
             this.parseUnlistedAndPrivate()
         } else {
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Conditions not met: addUnlistedAndPrivate or pageType mismatch.');
+            log.debug('Conditions not met: addUnlistedAndPrivate or pageType mismatch.');
         }
     }
     public inject() {
@@ -787,7 +853,7 @@ export class menu {
             this.observer.observe(unsafeWindow.document.getElementById('app')!, { childList: true, subtree: true });
             if (!unsafeWindow.document.querySelector('#pluginMenu')) {
                 originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)
-                this.pageType = getPageType() ?? this.pageType
+                this.pageType = getPageType()
             }
         } catch (error) {
             originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)

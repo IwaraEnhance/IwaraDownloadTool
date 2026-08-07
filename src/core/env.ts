@@ -1,3 +1,6 @@
+import { createLogger } from "./log";
+
+const log = createLogger('Env');
 const ConvertibleNumber: unique symbol = Symbol("ConvertibleNumber");
 const PositiveInteger: unique symbol = Symbol("PositiveInteger");
 const NegativeInteger: unique symbol = Symbol("NegativeInteger");
@@ -643,7 +646,7 @@ String.prototype.replaceVariable = function (replacements: Record<string, unknow
     });
     while (true) {
         if (seen.has(current)) {
-            console.warn("检测到循环替换！", `终止于: ${current}`);
+            log.warn("检测到循环替换！", `终止于: ${current}`);
             break;
         }
         seen.add(current);

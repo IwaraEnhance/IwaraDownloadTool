@@ -5,7 +5,9 @@ import { ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { renderNode } from "../core/extension";
 import { activeToasts, Toast, ToastOptions } from "./toastify";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
+
+const log = createLogger('Toast');
 
 /**
  * 创建Toast通知的DOM节点
@@ -55,11 +57,11 @@ export function getTextNode(node: Node | Element): string {
  */
 export function newToast(type: ToastType, params?: ToastOptions): Toast {
     const logFunc = {
-        [ToastType.Warn]: originalConsole.warn,
-        [ToastType.Error]: originalConsole.error,
-        [ToastType.Log]: originalConsole.log,
-        [ToastType.Info]: originalConsole.info,
-    }[type] || originalConsole.log
+        [ToastType.Warn]: log.warn,
+        [ToastType.Error]: log.error,
+        [ToastType.Log]: log.info,
+        [ToastType.Info]: log.info,
+    }[type] || log.info
     if (isNullOrUndefined(params)) params = {}
     if (!isNullOrUndefined(params.id) && activeToasts.has(params.id)) activeToasts.get(params.id)?.hide()
     switch (type) {

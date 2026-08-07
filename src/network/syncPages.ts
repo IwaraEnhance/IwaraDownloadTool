@@ -2,13 +2,15 @@ import "../core/env";
 import { delay, isNullOrUndefined, stringify } from "../core/env";
 import { ToastType } from "../core/enum";
 import { unlimitedFetch, renderNode } from "../core/extension";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { db } from "../core/db";
 import { getAuth, refreshToken } from "./auth";
 import { newToast, toastNode } from "../ui/notify";
 import { parseVideoInfo } from "./video";
 import { apiEndpoint, isLoggedIn } from "../main";
 import site from "../data/site.json";
+
+const log = createLogger('SyncPages');
 
 /**
  * 抓取单页视频列表并缓存到 IndexedDB
@@ -65,7 +67,7 @@ async function fetchAndCachePage(page: number): Promise<true | false | 'last'> {
         const toUpdate = list.difference(fullVideos, 'ID');
         if (toUpdate.any()) {
             await db.bulkPutVideos(toUpdate);
-            originalConsole.log(`update: ${toUpdate.length} ${toUpdate[0].Title}`)
+            log.info(`update: ${toUpdate.length} ${toUpdate[0].Title}`)
         }
     }
 
@@ -112,7 +114,7 @@ export async function syncAllVideosPages(): Promise<void> {
             }
 
             if (result === false) {
-                originalConsole.warn(`[SyncPages] 页面 ${page} 失败`);
+                log.warn(`页面 ${page} 失败`);
                 failedPages.push(page);
                 await delay(5000 + Math.random() * 1000);
                 page++;
@@ -124,7 +126,7 @@ export async function syncAllVideosPages(): Promise<void> {
             progressNode.firstChild!.textContent = `正在遍历视频页面... 第 ${page} 页 (失败: ${failedPages.length})`;
 
         } catch (error) {
-            originalConsole.warn(`[SyncPages] 页面 ${page} 异常:`, stringify(error));
+            log.warn(`页面 ${page} 异常:`, stringify(error));
             failedPages.push(page);
         }
 
@@ -142,7 +144,7 @@ export async function syncAllVideosPages(): Promise<void> {
                 const result = await fetchAndCachePage(retryPage);
 
                 if (result === false) {
-                    originalConsole.warn(`[SyncPages] 重试页面 ${retryPage} 仍失败`);
+                    log.warn(`重试页面 ${retryPage} 仍失败`);
                     retryFailed.push(retryPage);
                     continue;
                 }
@@ -151,7 +153,7 @@ export async function syncAllVideosPages(): Promise<void> {
                 progressNode.firstChild!.textContent = `正在重试失败页面... ${retryPage} 成功 (剩余 ${failedPages.length - retryFailed.length - (failedPages.indexOf(retryPage) + 1 - retryFailed.length)} 个待重试)`;
 
             } catch (error) {
-                originalConsole.warn(`[SyncPages] 重试页面 ${retryPage} 异常:`, stringify(error));
+                log.warn(`重试页面 ${retryPage} 异常:`, stringify(error));
                 retryFailed.push(retryPage);
             }
 
@@ -168,6 +170,6 @@ export async function syncAllVideosPages(): Promise<void> {
     }).show();
 
     if (retryFailed.length > 0) {
-        originalConsole.warn(`[SyncPages] 始终失败的页码: ${retryFailed.join(', ')}`);
+        log.warn(`始终失败的页码: ${retryFailed.join(', ')}`);
     }
 }

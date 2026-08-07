@@ -1,9 +1,12 @@
-import { originalConsole, originalFetch } from "../core/hijack";
+import { originalFetch } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { config } from "../core/config";
 import { db } from "../core/db";
 import { getAuth, getPlayload } from "./auth";
 import { parseVideoInfo } from "./video";
 import { isNull, isNullOrUndefined, isString, isUndefined } from "../core/env";
+
+const log = createLogger('Fetch');
 
 /**
  * 处理请求头中的 Authorization，如果是 refresh_token 则隐藏凭证并更新本地存储
@@ -33,7 +36,7 @@ function handleAuthorizationHeader(init?: RequestInit): void {
     if (payload['type'] === 'refresh_token' && !isUndefined(token)) {
         localStorage.setItem('token', token);
         config.authorization = token;
-        GM_getValue('isDebug') && originalConsole.debug(`[Debug] refresh_token: 凭证已隐藏`);
+        log.debug('refresh_token: 凭证已隐藏');
     }
 }
 
@@ -143,7 +146,7 @@ async function handleVideosResponse(response: Response, url: URL): Promise<Respo
  */
 export function createInterceptedFetch(): typeof unsafeWindow.fetch {
     return async function (input: Request | string | URL, init?: RequestInit): Promise<Response> {
-        GM_getValue('isDebug') && originalConsole.debug(`[Debug] Fetch ${input}`);
+        log.debug(`Fetch ${input}`);
         const url = (input instanceof Request ? input.url : input instanceof URL ? input.href : input).toURL();
         if (!isUndefined(init) && init.headers) {
             handleAuthorizationHeader(init);

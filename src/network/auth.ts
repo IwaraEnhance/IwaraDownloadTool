@@ -1,9 +1,12 @@
 import "../core/env";
 import { isNullOrUndefined, prune } from "../core/env";
 import { config } from "../core/config";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { unlimitedFetch } from "../core/extension";
 import { apiEndpoint, isLoggedIn } from "../main";
+import { getXVersion } from "./xVersion";
+
+const log = createLogger('Auth');
 
 /**
  * 刷新Iwara.tv的访问令牌
@@ -46,7 +49,7 @@ export async function refreshToken(): Promise<string> {
         return accessToken;
 
     } catch (error) {
-        originalConsole.warn('Failed to refresh token:', error);
+        log.warn('Failed to refresh token:', error);
 
         if (!oldAccessToken?.trim()) {
             throw new Error(`Refresh token failed and no valid access token available`);
@@ -80,20 +83,4 @@ export async function getAuth(url?: string): Promise<{ Cooike: string; Authoriza
  */
 export function getPlayload(authorization: string): { [key: string]: any } {
     return JSON.parse(decodeURIComponent(encodeURIComponent(window.atob(authorization.split(' ').pop()!.split('.')[1]))))
-}
-
-/**
- * 根据URL生成X-Version头值
- * @async
- * @private
- * @param {string} urlString - 请求URL
- * @returns {Promise<string>} 返回生成的X-Version值
- */
-async function getXVersion(urlString: string): Promise<string> {
-    let url = urlString.toURL()
-    const data = new TextEncoder().encode([url.pathname.split("/").pop(), url.searchParams.get('expires'), 'mSvL05GfEmeEmsEYfGCnVpEjYgTJraJN'].join('_'))
-    const hashBuffer = await crypto.subtle.digest('SHA-1', data)
-    return Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
 }
