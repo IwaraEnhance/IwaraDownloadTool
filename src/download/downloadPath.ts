@@ -11,14 +11,24 @@ import { newToast, toastNode } from "../ui/notify";
  * @returns {Path} 返回生成的路径对象
  */
 export function getDownloadPath(videoInfo: FullVideoInfo): Path {
+    // 按 config 开关逐项应用文件名规范化（TITLE/ALIAS 共用一套规则，仅截断长度不同）
+    const sanitize = (source: string, maxLength: number): string => {
+        let name = source
+        if (config.pathNormalize) name = name.normalize('NFKC')
+        if (config.pathReplaceEmojis) name = name.replaceEmojis('_')
+        if (config.pathFoldMarks) name = name.replaceAll(/(\P{Mark})(\p{Mark}+)/gu, '_')
+        if (config.pathSanitize) name = name.replace(/^\.|[\\\\/:*?\"<>|]/img, '_')
+        if (config.pathTruncate) name = name.truncate(maxLength)
+        return name
+    }
     return analyzeLocalPath(
         config.downloadPath.trim().replaceVariable({
             NowTime: new Date(),
             UploadTime: new Date(videoInfo.UploadTime),
             AUTHOR: videoInfo.Author,
             ID: videoInfo.ID,
-            TITLE: videoInfo.Title.normalize('NFKC').replaceEmojis('_').replaceAll(/(\P{Mark})(\p{Mark}+)/gu, '_').replace(/^\.|[\\\\/:*?\"<>|]/img, '_').truncate(72),
-            ALIAS: videoInfo.Alias.normalize('NFKC').replaceAll(/(\P{Mark})(\p{Mark}+)/gu, '_').replace(/^\.|[\\\\/:*?\"<>|]/img, '_').truncate(64),
+            TITLE: sanitize(videoInfo.Title, config.pathTitleMaxLength),
+            ALIAS: sanitize(videoInfo.Alias, config.pathAliasMaxLength),
             QUALITY: videoInfo.DownloadQuality,
         })
     )

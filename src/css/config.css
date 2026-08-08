@@ -11,72 +11,176 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    animation: configFadeIn .15s ease;
+}
+
+@keyframes configFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 #pluginConfig .main {
     background-color: var(--body);
-    padding: 24px;
+    padding: 0 24px 24px;
     margin: 10px;
     overflow-y: auto;
     width: 480px;
+    /* 固定高度：切换标签页/下载方式时面板尺寸保持稳定，内容内部滚动 */
+    height: clamp(360px, 70vh, 680px);
+    max-height: 90%;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+    animation: configPanelIn .2s ease;
 }
 
-#pluginConfig .buttonList {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
+@keyframes configPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(-14px) scale(.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 @media (max-width: 640px) {
     #pluginConfig .main {
         width: 100%;
         height: 80%;
+        margin: 0;
+        border-radius: 0;
     }
 }
 
-#pluginConfig button {
+#pluginConfig .main h2 {
+    margin: 0 0 6px 0;
+    padding: 20px 0 8px;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    color: var(--primary);
+}
+
+/* 底部按钮 */
+#pluginConfig .buttonList {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+#pluginConfig .buttonList button {
     background-color: var(--primary);
-    margin: 0px 20px 0px 20px;
-    padding: 10px 20px;
+    margin: 0;
+    padding: 10px 32px;
     color: var(--primary-text);
-    font-size: 18px;
+    font-size: 15px;
+    font-weight: 600;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
+    transition: filter .15s, transform .1s;
 }
 
-#pluginConfig button {
-    background-color: var(--primary);
+#pluginConfig .buttonList button:hover {
+    filter: brightness(1.12);
 }
 
-#pluginConfig button[disabled] {
+#pluginConfig .buttonList button:active {
+    transform: scale(.97);
+}
+
+#pluginConfig .buttonList button[disabled] {
     background-color: var(--muted);
     cursor: not-allowed;
+    filter: none;
+    transform: none;
 }
 
 #pluginConfig p {
     display: flex;
     flex-direction: column;
-    margin-top: 10px;
-    margin-bottom: 0px;
+    margin: 0;
 }
 
+/* 分组卡片 */
 #pluginConfig fieldset {
-    border: none;
-    margin: 10px 0 0 0;
-    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+    border-radius: 10px;
+    margin: 12px 0 0 0;
+    padding: 12px 14px 14px;
     display: flex;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--body) 94%, var(--text));
+}
+
+#pluginConfig fieldset>.fieldTitle {
+    margin: 0 0 6px 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--primary);
+}
+
+/* 下载方式单选：pill 组 */
+#pluginConfig fieldset.downloadType {
+    flex-direction: row;
     justify-content: space-between;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 6px 0 4px;
+    border: none;
+    background: none;
 }
 
-#pluginConfig fieldset>legend {
-    margin: 0 0 5px 0;
-    padding: 0;
+#pluginConfig fieldset.downloadType>.fieldTitle {
+    width: 100%;
+    margin-bottom: 6px;
 }
 
-#pluginConfig fieldset>label {
-    text-align: center;
+#pluginConfig fieldset.downloadType>label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s, color .15s;
+}
+
+#pluginConfig fieldset.downloadType>label:hover {
+    border-color: var(--primary);
+}
+
+#pluginConfig fieldset.downloadType>label:has(input:checked) {
+    background: color-mix(in srgb, var(--primary) 16%, transparent);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+#pluginConfig fieldset.downloadType input[type='radio'] {
+    accent-color: var(--primary);
+    margin: 0;
 }
 
 #pluginConfig p label {
@@ -85,27 +189,49 @@
     margin: 5px 0 0 0;
 }
 
+/* 开关行 */
 #pluginConfig .inputRadioLine {
     display: flex;
     align-items: center;
     flex-direction: row;
     justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+#pluginConfig .inputRadioLine:last-child {
+    border-bottom: none;
+}
+
+#pluginConfig .inputRadioLine label {
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
 }
 
 #pluginConfig input[type="text"],
-#pluginConfig input[type="password"] {
+#pluginConfig input[type="password"],
+#pluginConfig input[type="number"] {
     outline: none;
-    border-top: none;
-    border-right: none;
-    border-left: none;
-    border-image: initial;
-    border-bottom: 1px solid var(--muted);
-    line-height: 1;
-    height: 30px;
+    border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+    border-radius: 8px;
+    line-height: 1.2;
+    height: 34px;
+    padding: 0 10px;
     box-sizing: border-box;
     width: 100%;
-    background-color: var(--body);
+    background-color: color-mix(in srgb, var(--body) 92%, var(--text));
     color: var(--text);
+    font-size: 14px;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+#pluginConfig input[type="text"]:focus,
+#pluginConfig input[type="password"]:focus,
+#pluginConfig input[type="number"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 
 #pluginConfig input[type='checkbox'].switch {
@@ -114,25 +240,26 @@
     -webkit-appearance: none;
     -moz-appearance: none;
     position: relative;
-    width: 40px;
-    height: 20px;
+    flex-shrink: 0;
+    width: 42px;
+    height: 22px;
     background: var(--muted);
-    border-radius: 10px;
-    transition: border-color .2s, background-color .2s;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color .2s;
 }
 
 #pluginConfig input[type='checkbox'].switch::after {
     content: '';
-    display: inline-block;
-    width: 40%;
-    height: 80%;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--white);
-    box-shadow: 0, 0, 2px, var(--muted);
-    transition: .2s;
-    top: 2px;
-    position: absolute;
-    right: 55%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform .2s;
 }
 
 #pluginConfig input[type='checkbox'].switch:checked {
@@ -140,8 +267,102 @@
 }
 
 #pluginConfig input[type='checkbox'].switch:checked::after {
-    content: '';
-    position: absolute;
-    right: 2px;
-    top: 2px;
+    transform: translateX(20px);
+}
+
+/* 标签页 */
+#pluginConfig .tabs {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+    margin-top: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--body);
+    padding-top: 4px;
+}
+
+#pluginConfig .tabs button {
+    background: none;
+    color: var(--muted);
+    margin: 0;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+
+#pluginConfig .tabs button:hover {
+    color: var(--text);
+}
+
+#pluginConfig .tabs button.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+#pluginConfig .tabPanels {
+    margin-top: 8px;
+}
+
+/* 输入框行（label 在上、input 在下）——与开关行统一垂直节奏 */
+#pluginConfig label.fieldLine {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+#pluginConfig label.fieldLine:last-child {
+    border-bottom: none;
+}
+
+#pluginConfig label.fieldLine span {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 4px 2px;
+    letter-spacing: .3px;
+}
+
+/* 语言选择行（胶囊一体式：图标 + 文字 + 无边框输入框） */
+#pluginConfig .languageLine {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--body) 92%, var(--text));
+    border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+    border-radius: 10px;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+#pluginConfig .languageLine::before {
+    content: '🌐';
+    font-size: 16px;
+    line-height: 1;
+}
+
+#pluginConfig .languageLine input {
+    width: 80px;
+    background: transparent;
+    border: none;
+    height: 24px;
+    padding: 0 2px;
+    font-size: 14px;
+    box-shadow: none;
+}
+
+#pluginConfig .languageLine:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }

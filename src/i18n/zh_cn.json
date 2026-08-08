@@ -13,6 +13,29 @@
     "mediaCenterApi": "MediaCenter API: ",
     "mediaCenterApiKey": "MediaCenter API 密钥: ",
     "mediaCenterInfo": "→ MediaCenter项目 ←",
+    "downloadGroup": "下载",
+    "generalTab": "常规",
+    "advancedTab": "高级",
+    "downloadTab": "下载",
+    "aria2Tab": "Aria2",
+    "iwaradlTab": "iwaradl",
+    "mediaCenterTab": "MediaCenter",
+    "aria2Group": "Aria2",
+    "proxyGroup": "代理",
+    "mediaCenterGroup": "MediaCenter",
+    "iwaradlGroup": "iwaradl",
+    "priorityGroup": "画质",
+    "pathNormalizeGroup": "路径规范化",
+    "selectionGroup": "选择",
+    "visibilityGroup": "可见性",
+    "interfaceGroup": "界面",
+    "pathNormalize": "路径规范化 (NFKC)",
+    "pathReplaceEmojis": "替换 Emoji",
+    "pathFoldMarks": "折叠组合变音标记",
+    "pathSanitize": "清理非法文件名字符",
+    "pathTruncate": "截断标题/别名长度",
+    "pathTitleMaxLength": "标题最大长度: ",
+    "pathAliasMaxLength": "别名最大长度: ",
     "experimentalFeatures": "实验性功能",
     "enableUnsafeMode": "激进模式（风险自行承担）",
     "enableBeautify": "美化",
@@ -68,7 +91,18 @@
         {
             "nodeType": "br"
         },
-        "点击网页侧边的灰色侧栏展开脚本菜单，根据需求点击菜单中的功能。"
+        "点击网页侧边的灰色侧栏展开脚本菜单，根据需求点击菜单中的功能。",
+        {
+            "nodeType": "br"
+        },
+        {
+            "nodeType": "br"
+        },
+        "点击菜单中的“设置”可打开配置面板，配置项按标签页分类：常规（下载行为/选择/可见性/界面）、下载（路径模板与规范化）、Aria2/iwaradl（下载器与代理）、MediaCenter、高级（实验性与调试）。",
+        {
+            "nodeType": "br"
+        },
+        "首次使用建议先检查“下载”标签页中的下载路径与路径规范化（NFKC、Emoji、非法字符、长度截断）是否符合需求。"
     ],
     "useHelpForInjectCheckbox": "打开任意存在视频卡片的页面，脚本会在视频卡片上注入复选框，点击复选框或鼠标悬浮在视频卡片上按空格将会勾选此视频。",
     "useHelpForCheckDownloadLink": "开启“%#checkDownloadLink#%”功能会在下载视频前会检查视频简介以及评论，如果在其中发现疑似第三方网盘下载链接，将会弹出提示，您可以点击提示打开视频页面。",

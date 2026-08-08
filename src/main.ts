@@ -56,6 +56,12 @@ if (GM_getValue('isDebug')) {
     unsafeWindow.exportAllToJsonFiles = db.exportAllToJsonFiles.bind(db)
     // @ts-ignore
     unsafeWindow.exportToJsonFiles = db.exportToJsonFiles.bind(db)
+    // @ts-ignore
+    // 测试首次安装引导弹窗（注意：会清空所有配置并重新显示引导）
+    unsafeWindow.testFirstRun = firstRun
+    // @ts-ignore
+    // 测试引导弹窗（不清空配置，确认后打开配置面板）
+    unsafeWindow.testGuideOverlay = showGuideOverlay
 }
 
 unsafeWindow.fetch = createInterceptedFetch();
@@ -162,10 +168,9 @@ function hijackStorage() {
         pluginMenu.pageChange()
     }
 }
-function firstRun() {
-    GM_listValues().forEach(i => GM_deleteValue(i))
-    Config.destroyInstance()
-    editConfig = new configEdit(config)
+/** 渲染首次安装引导弹窗（不清空配置）。
+ * 点击"确定"后：若提供 confirm 回调则调用（首次安装写入标记），否则移除弹窗并打开配置面板（测试用）。 */
+function showGuideOverlay(confirm?: () => void) {
     let confirmButton = renderNode({
         nodeType: 'button',
         attributes: {
@@ -175,10 +180,12 @@ function firstRun() {
         childs: '%#ok#%',
         events: {
             click: () => {
-                GM_setValue('isFirstRun', false)
-                GM_setValue('version', GM_info.script.version)
                 unsafeWindow.document.querySelector('#pluginOverlay')?.remove()
-                editConfig.inject()
+                if (confirm) {
+                    confirm()
+                } else {
+                    editConfig.inject()
+                }
             }
         }
     })
@@ -224,6 +231,17 @@ function firstRun() {
             confirmButton
         ]
     }))
+}
+
+function firstRun() {
+    GM_listValues().forEach(i => GM_deleteValue(i))
+    Config.destroyInstance()
+    editConfig = new configEdit(config)
+    showGuideOverlay(() => {
+        GM_setValue('isFirstRun', false)
+        GM_setValue('version', GM_info.script.version)
+        editConfig.inject()
+    })
 }
 async function main() {
     [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach(css => GM_addStyle(css));

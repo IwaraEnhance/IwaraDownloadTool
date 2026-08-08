@@ -32,16 +32,16 @@ const ARIA2_TRACK_MANAGER_LOCK = 'aria2TrackManager';
  *  不低于后台标签页定时器节流上限（约 60s）+ 余量，避免被节流时误判过期导致频繁重选 */
 const ARIA2_TRACK_MANAGER_TTL = 75_000;
 /** 管理器选举间隔（毫秒）：非管理器页面周期尝试抢占单把锁 */
-const ARIA2_TRACK_ELECTION_INTERVAL = 5_000;
+const ARIA2_TRACK_ELECTION_INTERVAL = 4000;
 /** 任务队列扫描间隔（毫秒）：把 aria2 中尚未纳入队列的任务补入队列 */
 const ARIA2_TRACK_SCAN_INTERVAL = 60_000;
 /** 任务轮询间隔（毫秒）：按任务状态自适应——
  * 下载中（active）用短间隔保持实时感知完成/错误/慢速；
  * 等待/暂停（waiting/paused）用中等间隔等待状态变化；
  * 任务不可达（无状态）用较长间隔退避，减少无效请求 */
-const ARIA2_TRACK_POLL_INTERVAL_ACTIVE = 1000 * 2;   // 2s：下载中，实时性最关键
-const ARIA2_TRACK_POLL_INTERVAL_IDLE = 1000 * 5;     // 5s：等待/暂停/初始未知
-const ARIA2_TRACK_POLL_INTERVAL_BACKOFF = 1000 * 10; // 10s：任务不可达退避
+const ARIA2_TRACK_POLL_INTERVAL_ACTIVE = 1000 * 4;   // 4s：下载中，实时性最关键
+const ARIA2_TRACK_POLL_INTERVAL_IDLE = 1000 * 8;     // 8s：等待/暂停/初始未知
+const ARIA2_TRACK_POLL_INTERVAL_BACKOFF = 1000 * 32; // 32s：任务不可达退避
 
 /** 根据任务状态选择下一次轮询间隔：active 用短间隔保持实时，等待/暂停/初始用中等间隔，不可达退避 */
 function aria2TrackPollInterval(status?: string): number {
@@ -54,6 +54,9 @@ function aria2TrackPollInterval(status?: string): number {
 }
 /** 下载速度过慢判定阈值（字节/秒，64 KiB/s）：低于此速度视为“速度过慢”并重启任务 */
 export const ARIA2_SLOW_SPEED_THRESHOLD = 64 * 1024;
+/** 慢启动豁免轮询次数：任务进入 active 后的前 N 次轮询不因“速度过慢”重启——
+ * TCP 慢启动阶段速度低是正常的（每次新建连接都会重新慢启动），等它提速后再判定 */
+const ARIA2_TRACK_SLOW_START_EXEMPT_POLLS = 8;
 /** 当前页面实例唯一的标识 */
 const aria2TrackOwner = UUID();
 /** 跨页面原子锁：全局仅此一把，用于选举唯一的管理页面 */
@@ -159,13 +162,11 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
     let currentGid = task.gid;
     let consecutiveFailures = 0;
     let lastStatus: string | undefined; // 上一轮任务状态，用于自适应轮询间隔
-    let lastLoggedProgress = -1;        // 上次打印进度的百分点（0-100），用于按进度间隔输出 debug 日志
+    let activePollCount = 0;            // 当前 active 段的连续轮询次数（TCP 慢启动豁免）
 
     log.debug(`${task.videoId} 开始处理 (gid=${task.gid}, title=${videoInfo.Title})`);
 
     while (true) {
-        // 状态自适应轮询：active 下载中用短间隔保持实时，等待/暂停用中等间隔，不可达退避
-        await delay(aria2TrackPollInterval(lastStatus));
         // 本页仍是管理器且任务仍在队列中才继续（失去则自行让位）
         if (!aria2TrackLock.isHeld(ARIA2_TRACK_MANAGER_LOCK)) return;
         if (!hasAria2TrackTask(task.videoId)) return;
@@ -184,19 +185,14 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
             }
             consecutiveFailures = 0;
 
-            // debug：状态转换时打印完整状态；active 下载中按 5% 进度间隔打印进展，避免每轮刷屏
-            // （log.debug 内部已检查 isDebug 开关）
+            // debug：状态转换时打印完整状态（log.debug 内部已检查 isDebug 开关）
             const progress = getAria2Progress(status);
             if (lastStatus !== status.status) {
                 log.debug(`${task.videoId} 状态: ${lastStatus ?? '初始'} → ${status.status} (gid=${currentGid}, 进度=${(progress * 100).toFixed(1)}%, 速度=${formatAria2Speed(status.downloadSpeed)})`);
-            } else if (status.status === 'active') {
-                const pct = Math.floor(progress * 100);
-                if (pct - lastLoggedProgress >= 5) {
-                    lastLoggedProgress = pct;
-                    log.debug(`${task.videoId} 下载中: 进度=${(progress * 100).toFixed(1)}%, 速度=${formatAria2Speed(status.downloadSpeed)})`);
-                }
             }
             lastStatus = status.status; // 记录当前状态，驱动下一轮轮询间隔
+            // 离开 active 时重置慢启动计数（重新进入 active 视为新连接，重新豁免）
+            if (status.status !== 'active') activePollCount = 0;
 
             switch (status.status) {
                 case 'complete':
@@ -227,16 +223,23 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                     break;
 
                 case 'active':
+                    // TCP 慢启动豁免：进入 active 后的前 N 次轮询不因“速度过慢”重启（刚起步速度低是正常的）
+                    activePollCount++;
                     if (isConvertibleToNumber(status.downloadSpeed) && Number(status.downloadSpeed) <= ARIA2_SLOW_SPEED_THRESHOLD) {
-                        // 下载进度 > 98% 时豁免（接近完成不重启）；但速度为 0 不豁免
-                        const speed = Number(status.downloadSpeed);
-                        if (speed === 0 || getAria2Progress(status) <= 0.98) {
-                            log.debug(`${task.videoId} 速度过慢，重启`);
-                            const freshActive = await restartAria2Task(currentGid, task.videoId, status);
-                            if (freshActive) {
-                                videoInfo = freshActive;
-                                trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartSlow');
+                        if (activePollCount > ARIA2_TRACK_SLOW_START_EXEMPT_POLLS) {
+                            // 已过慢启动豁免期：下载进度 > 98% 时豁免（接近完成不重启）；但速度为 0 不豁免
+                            const speed = Number(status.downloadSpeed);
+                            if (speed === 0 || getAria2Progress(status) <= 0.98) {
+                                log.debug(`${task.videoId} 速度过慢，重启`);
+                                const freshActive = await restartAria2Task(currentGid, task.videoId, status);
+                                if (freshActive) {
+                                    videoInfo = freshActive;
+                                    trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartSlow');
+                                }
                             }
+                        } else {
+                            // 慢启动豁免期内速度低属正常，暂不重启（避免误杀刚起步的下载）
+                            log.debug(`${task.videoId} 速度过慢(${formatAria2Speed(status.downloadSpeed)})，慢启动豁免期 (${activePollCount}/${ARIA2_TRACK_SLOW_START_EXEMPT_POLLS})，暂不重启`);
                         }
                     }
                     break;
@@ -267,6 +270,10 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                 return;
             }
         }
+        // 状态自适应轮询：在循环末尾按本轮状态决定下一次等待间隔——
+        // 首次进入立即查询（任务入队即可实时感知），active 下载中用短间隔保持实时，
+        // 等待/暂停用中等间隔，不可达（lastStatus=undefined）用默认间隔退避
+        await delay(aria2TrackPollInterval(lastStatus));
     }
 }
 

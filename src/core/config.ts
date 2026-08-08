@@ -35,6 +35,13 @@ const DEFAULT_CONFIG: ImportConfig = {
     iwaradlToken: '',
     mediaCenterApi: 'http://127.0.0.1:3000',
     mediaCenterApiKey: '',
+    pathNormalize: true,
+    pathReplaceEmojis: true,
+    pathFoldMarks: true,
+    pathSanitize: true,
+    pathTruncate: true,
+    pathTitleMaxLength: 72,
+    pathAliasMaxLength: 64,
     priority: {
         'Source': 100,
         '540': 99,
@@ -76,6 +83,13 @@ export class Config {
     iwaradlToken: string = DEFAULT_CONFIG.iwaradlToken
     mediaCenterApi: string = DEFAULT_CONFIG.mediaCenterApi
     mediaCenterApiKey: string = DEFAULT_CONFIG.mediaCenterApiKey
+    pathNormalize: boolean = DEFAULT_CONFIG.pathNormalize
+    pathReplaceEmojis: boolean = DEFAULT_CONFIG.pathReplaceEmojis
+    pathFoldMarks: boolean = DEFAULT_CONFIG.pathFoldMarks
+    pathSanitize: boolean = DEFAULT_CONFIG.pathSanitize
+    pathTruncate: boolean = DEFAULT_CONFIG.pathTruncate
+    pathTitleMaxLength: number = DEFAULT_CONFIG.pathTitleMaxLength
+    pathAliasMaxLength: number = DEFAULT_CONFIG.pathAliasMaxLength
     priority: Record<string, number> = DEFAULT_CONFIG.priority
     constructor(importConfig?: ImportConfig) {
         let body = new Proxy(this, {

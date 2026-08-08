@@ -13,6 +13,29 @@
     "mediaCenterApi": "MediaCenter API: ",
     "mediaCenterApiKey": "MediaCenter API Key: ",
     "mediaCenterInfo": "→ MediaCenter ←",
+    "downloadGroup": "Download",
+    "generalTab": "General",
+    "advancedTab": "Advanced",
+    "downloadTab": "Download",
+    "aria2Tab": "Aria2",
+    "iwaradlTab": "iwaradl",
+    "mediaCenterTab": "MediaCenter",
+    "aria2Group": "Aria2",
+    "proxyGroup": "Proxy",
+    "mediaCenterGroup": "MediaCenter",
+    "iwaradlGroup": "iwaradl",
+    "priorityGroup": "Quality",
+    "pathNormalizeGroup": "Path Normalization",
+    "selectionGroup": "Selection",
+    "visibilityGroup": "Visibility",
+    "interfaceGroup": "Interface",
+    "pathNormalize": "Path Normalize (NFKC)",
+    "pathReplaceEmojis": "Replace Emoji",
+    "pathFoldMarks": "Fold Combining Marks",
+    "pathSanitize": "Sanitize Filename Characters",
+    "pathTruncate": "Truncate Title/Alias Length",
+    "pathTitleMaxLength": "Title Max Length: ",
+    "pathAliasMaxLength": "Alias Max Length: ",
     "experimentalFeatures": "Experimental Features",
     "enableUnsafeMode": "Unsafe Mode (Use at your own risk)",
     "enableBeautify": "Beautify",
@@ -68,7 +91,18 @@
         {
             "nodeType": "br"
         },
-        "Click the gray sidebar on the webpage to expand the script menu, then click the functions in the menu according to your needs."
+        "Click the gray sidebar on the webpage to expand the script menu, then click the functions in the menu according to your needs.",
+        {
+            "nodeType": "br"
+        },
+        {
+            "nodeType": "br"
+        },
+        "Click \"Settings\" in the menu to open the config panel. Options are organized into tabs: General (download behavior / selection / visibility / interface), Download (path template & normalization), Aria2/iwaradl (downloader & proxy), MediaCenter, and Advanced (experimental & debugging).",
+        {
+            "nodeType": "br"
+        },
+        "For first-time use, it is recommended to check the download path and path normalization (NFKC, Emoji, illegal characters, length truncation) on the \"Download\" tab."
     ],
     "useHelpForInjectCheckbox": "Open any page with video cards, and the script will inject checkboxes on the video cards. Click the checkbox or hover over the video card and press space to select this video.",
     "useHelpForCheckDownloadLink": "Enabling \"%#checkDownloadLink#%\" will check the video description and comments before downloading. If third-party cloud storage links are found, a prompt will appear allowing you to visit the video page.",

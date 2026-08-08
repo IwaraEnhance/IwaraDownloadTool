@@ -16,6 +16,14 @@ configTestGroup.add(new Test('默认值', 'async', function () {
     this.assertEqual(c.priority['Source'], 100);
     this.assertEqual(c.priority['preview'], 1);
     this.assertEqual(c.language, 'zh');
+    // 路径规范化开关与长度默认值
+    this.assertEqual(c.pathNormalize, true);
+    this.assertEqual(c.pathReplaceEmojis, true);
+    this.assertEqual(c.pathFoldMarks, true);
+    this.assertEqual(c.pathSanitize, true);
+    this.assertEqual(c.pathTruncate, true);
+    this.assertEqual(c.pathTitleMaxLength, 72);
+    this.assertEqual(c.pathAliasMaxLength, 64);
 }));
 
 configTestGroup.add(new Test('getInstance 单例', 'async', function () {

@@ -166,6 +166,13 @@ declare interface ImportConfig {
     iwaradlToken: string;
     mediaCenterApi: string;
     mediaCenterApiKey: string;
+    pathNormalize: boolean;
+    pathReplaceEmojis: boolean;
+    pathFoldMarks: boolean;
+    pathSanitize: boolean;
+    pathTruncate: boolean;
+    pathTitleMaxLength: number;
+    pathAliasMaxLength: number;
     priority: Record<string, number>;
 }
 /**
