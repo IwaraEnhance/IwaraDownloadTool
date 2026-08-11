@@ -101,7 +101,7 @@ export class Config {
                 if (property === 'language') {
                     return Config.getLanguage(value)
                 }
-                log.debug(`get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                // log.debug(`get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 return value
             },
             set: function (target, property: string, value) {
@@ -110,7 +110,7 @@ export class Config {
                     return true
                 }
                 GM_setValue(property, value)
-                log.debug(`set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                // log.debug(`set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 if (!isNullOrUndefined(target.configChange)) target.configChange(property)
                 return true
             }

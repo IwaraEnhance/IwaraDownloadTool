@@ -19,7 +19,7 @@ const log = createLogger('SyncPages');
 async function fetchAndCachePage(page: number): Promise<true | false | 'last'> {
     const auth = await getAuth();
     const response = await unlimitedFetch(
-        `https://${apiEndpoint}/videos?sort=date&page=${page}&limit=50`,
+        `https://${apiEndpoint}/videos?sort=date&page=${page}&limit=${site.pageLimit}`,
         { headers: auth as any },
         {
             retry: true,

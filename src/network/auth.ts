@@ -3,6 +3,7 @@ import { isNullOrUndefined, prune } from "../core/env";
 import { config } from "../core/config";
 import { createLogger } from "../core/log";
 import { unlimitedFetch } from "../core/extension";
+import { LS_KEY_ACCESS_TOKEN, LS_KEY_TOKEN } from "../core/constants";
 import { apiEndpoint, isLoggedIn } from "../main";
 import { getXVersion } from "./xVersion";
 
@@ -16,12 +17,12 @@ const log = createLogger('Auth');
 export async function refreshToken(): Promise<string> {
     const { authorization } = config;
     if (!isLoggedIn()) throw new Error(`Refresh token failed: Not logged in`)
-    const refreshToken = localStorage.getItem('token') ?? authorization;
+    const refreshToken = localStorage.getItem(LS_KEY_TOKEN) ?? authorization;
     if (isNullOrUndefined(refreshToken) || refreshToken.isEmpty()) {
         throw new Error(`Refresh token failed: no refresh token`);
     }
 
-    const oldAccessToken = localStorage.getItem('accessToken');
+    const oldAccessToken = localStorage.getItem(LS_KEY_ACCESS_TOKEN);
     try {
         const res = await unlimitedFetch(
             `https://${apiEndpoint}/user/token`,
@@ -43,7 +44,7 @@ export async function refreshToken(): Promise<string> {
         }
 
         if (!oldAccessToken || oldAccessToken !== accessToken) {
-            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem(LS_KEY_ACCESS_TOKEN, accessToken);
         }
 
         return accessToken;
@@ -70,7 +71,7 @@ export async function getAuth(url?: string): Promise<{ Cooike: string; Authoriza
         'Referer': `${window.location.origin}/`,
         'Accept': 'application/json',
         'Cooike': unsafeWindow.document.cookie,
-        'Authorization': isLoggedIn() ? `Bearer ${localStorage.getItem('accessToken') ?? await refreshToken()}` : undefined,
+        'Authorization': isLoggedIn() ? `Bearer ${localStorage.getItem(LS_KEY_ACCESS_TOKEN) ?? await refreshToken()}` : undefined,
         'X-Version': !isNullOrUndefined(url) && !url.isEmpty() ? await getXVersion(url) : undefined,
         'X-Site': unsafeWindow.location.hostname
     })

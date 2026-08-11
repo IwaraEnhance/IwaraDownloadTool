@@ -12,6 +12,7 @@ import { importConfig } from "./configUi";
 import { syncCachedToMediaCenter } from "../network/mediaCenter";
 import { originalNodeAppendChild, originalAddEventListener } from "../core/hijack";
 import { createLogger } from "../core/log";
+import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_VERSION } from "../core/constants";
 import { i18nList, type Language } from "../i18n";
 import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "../main";
 import site from "../data/site.json";
@@ -263,7 +264,7 @@ const CONFIG_FIELDS: ConfigField[] = [
     {
         name: 'isDebug', type: 'switch', tabs: ['advanced'], defaultValue: false,
         get: (name, defaultValue) => GM_getValue(name, defaultValue),
-        onSet: (target, e) => { GM_setValue('isDebug', (e.target as HTMLInputElement).checked); unsafeWindow.location.reload() }
+        onSet: (target, e) => { GM_setValue(GM_KEY_IS_DEBUG, (e.target as HTMLInputElement).checked); unsafeWindow.location.reload() }
     },
     // 下载页（下载画质在前，下载位置在后）
     { name: 'downloadPriority', type: 'text', tabs: ['download'], group: 'download', visible: (target) => target.checkPriority },
@@ -339,7 +340,7 @@ export class configEdit {
             },
             events: {
                 click: () => {
-                    GM_setValue('isFirstRun', true)
+                    GM_setValue(GM_KEY_IS_FIRST_RUN, true)
                     unsafeWindow.location.reload()
                 }
             }
@@ -773,7 +774,7 @@ export class menu {
         while (pageCount < MAX_FIND_PAGES) {
             log.debug(`Fetching page ${pageCount}.`);
             const response = await unlimitedFetch(
-                `https://${apiEndpoint}/videos?subscribed=true&limit=50&rating=${rating()}&page=${pageCount}`,
+                `https://${apiEndpoint}/videos?subscribed=true&limit=${site.pageLimit}&rating=${rating()}&page=${pageCount}`,
                 { method: 'GET', headers: await getAuth() },
                 {
                     retry: true,
@@ -968,25 +969,25 @@ export class waterMark {
     })
     debugFlag = renderNode({
         nodeType: 'span',
-        childs: `${GM_getValue('isDebug') ? `${i18nList[config.language].isDebug} ${GM_info.scriptHandler}` : ''}`
+        childs: `${GM_getValue(GM_KEY_IS_DEBUG) ? `${i18nList[config.language].isDebug} ${GM_info.scriptHandler}` : ''}`
     })
     body = renderNode({
         nodeType: 'p',
         className: 'fixed-bottom-right',
         childs: [
-            `%#appName#% ${GM_getValue('version')} `,
+            `%#appName#% ${GM_getValue(GM_KEY_VERSION)} `,
             this.selected,
             this.debugFlag
         ],
         events: {
             click: (e: Event) => {
-                if (GM_getValue('isDebug')) return
+                if (GM_getValue(GM_KEY_IS_DEBUG)) return
                 if (this.debugSwitchCount < DEBUG_SWITCH_THRESHOLD) {
                     this.debugSwitchCount++
                     return
                 } else {
-                    GM_setValue('isDebug', true)
-                    this.debugFlag.textContent = `${GM_getValue('isDebug') ? i18nList[config.language].isDebug : ''}`
+                    GM_setValue(GM_KEY_IS_DEBUG, true)
+                    this.debugFlag.textContent = `${GM_getValue(GM_KEY_IS_DEBUG) ? i18nList[config.language].isDebug : ''}`
                     unsafeWindow.location.reload()
                 }
             }

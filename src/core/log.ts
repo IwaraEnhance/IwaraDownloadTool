@@ -1,4 +1,5 @@
 import { originalConsole } from "./hijack";
+import { GM_KEY_IS_DEBUG } from "./constants";
 
 /**
  * 统一日志模块：所有运行时日志通过 createLogger(tag) 获取带前缀的 logger。
@@ -22,7 +23,7 @@ export interface Logger {
 export function createLogger(tag: string): Logger {
     const prefix = `[${tag}]`;
     return {
-        debug: (...args: any[]) => { GM_getValue('isDebug') && originalConsole.debug(prefix, ...args); },
+        debug: (...args: any[]) => { GM_getValue(GM_KEY_IS_DEBUG) && originalConsole.debug(prefix, ...args); },
         info: (...args: any[]) => { originalConsole.info(prefix, ...args); },
         warn: (...args: any[]) => { originalConsole.warn(prefix, ...args); },
         error: (...args: any[]) => { originalConsole.error(prefix, ...args); },

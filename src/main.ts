@@ -14,8 +14,10 @@ import { createLogger } from "./core/log";
 import { i18nList } from "./i18n";
 import { config, Config } from "./core/config";
 import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
-import { Dictionary, GMSyncDictionary, Version } from "./core/class";
+import { Dictionary, GMSyncDictionary } from "./core/class";
 import { db } from "./core/db";
+import { runMigrations } from "./core/migration";
+import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from "./core/constants";
 import { findElement, renderNode, unlimitedFetch } from "./core/extension";
 import { check } from "./network/envCheck";
 import { getAuth } from "./network/auth";
@@ -24,7 +26,7 @@ import { syncAllVideosPages } from "./network/syncPages";
 import { syncCachedToMediaCenter } from "./network/mediaCenter";
 import { trackExistingAria2Tasks } from "./download/aria2TrackManager";
 import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui/ui";
-import { PageType, ToastType, VersionState } from "./core/enum";
+import { PageType, ToastType } from "./core/enum";
 import { getPageTypeFromPath } from "./core/pageType";
 import { createInterceptedFetch } from "./network/fetchInterceptor";
 
@@ -36,6 +38,9 @@ if (!domain) {
     throw "Not target"
 }
 
+/** 自动关注的作者用户名（脚本作者的 Iwara 账号） */
+const AUTHOR_USERNAME = 'dawn'
+
 switch (GM_info.scriptHandler) {
     case 'Via':
     case 'Tampermonkey':
@@ -45,7 +50,7 @@ switch (GM_info.scriptHandler) {
         throw `Not support ${GM_info.scriptHandler}`
 }
 
-if (GM_getValue('isDebug')) {
+if (GM_getValue(GM_KEY_IS_DEBUG)) {
     debugger
     log.debug(stringify(GM_info))
     // @ts-ignore
@@ -67,10 +72,10 @@ if (GM_getValue('isDebug')) {
 unsafeWindow.fetch = createInterceptedFetch();
 
 export var apiEndpoint = site.apiEndpoint
-export var isLoggedIn = () => !(unsafeWindow.localStorage.getItem('token') ?? '').isEmpty()
-export var rating = () => localStorage.getItem('rating') ?? 'all'
+export var isLoggedIn = () => !(unsafeWindow.localStorage.getItem(LS_KEY_TOKEN) ?? '').isEmpty()
+export var rating = () => localStorage.getItem(LS_KEY_RATING) ?? 'all'
 
-export var selectList = new GMSyncDictionary<VideoInfo>('selectList')
+export var selectList = new GMSyncDictionary<VideoInfo>(GM_KEY_SELECT_LIST)
 export var pageSelectButtons = new Dictionary<HTMLInputElement>()
 export var mouseTarget: Element | null = null
 export var pluginMenu = new menu();
@@ -93,7 +98,7 @@ selectList.onSync = () => {
 };
 
 export function getSelectButton(id: string): HTMLInputElement | undefined {
-    return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement
+    return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement | undefined
 }
 export function getPageType(): PageType {
     // URL 路由来源：browserHistory 走 pathname；hashHistory 走 hash（#/path 或 #!/path）。
@@ -157,11 +162,11 @@ function hijackHistoryReplaceState() {
 function hijackStorage() {
     unsafeWindow.Storage.prototype.setItem = function (key, value) {
         originalStorageSetItem.call(this, key, value)
-        if (key === 'token') pluginMenu.pageChange()
+        if (key === LS_KEY_TOKEN) pluginMenu.pageChange()
     }
     unsafeWindow.Storage.prototype.removeItem = function (key) {
         originalStorageRemoveItem.call(this, key)
-        if (key === 'token') pluginMenu.pageChange()
+        if (key === LS_KEY_TOKEN) pluginMenu.pageChange()
     }
     unsafeWindow.Storage.prototype.clear = function () {
         originalStorageClear.call(this)
@@ -238,35 +243,32 @@ function firstRun() {
     Config.destroyInstance()
     editConfig = new configEdit(config)
     showGuideOverlay(() => {
-        GM_setValue('isFirstRun', false)
-        GM_setValue('version', GM_info.script.version)
+        GM_setValue(GM_KEY_IS_FIRST_RUN, false)
+        GM_setValue(GM_KEY_VERSION, GM_info.script.version)
         editConfig.inject()
     })
 }
+
 async function main() {
     [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach(css => GM_addStyle(css));
-    watermark.inject()
-    if (new Version(GM_getValue('version', '0.0.0')).compare(new Version('3.3.0')) === VersionState.Low) {
-        GM_setValue('isFirstRun', true)
-        alert(i18nList[config.language].configurationIncompatible)
+
+    // 升级迁移：旧版本数据不兼容时执行清理
+    const migration = await runMigrations({ selectList })
+    if (migration === 'failed') return      // 迁移失败：中止启动，版本号未更新，下次启动自动重试
+    if (migration === 'reload') {           // 迁移完成：重载进入正常流程
+        unsafeWindow.location.reload()
+        return
     }
-    if (GM_getValue('isFirstRun', true)) {
+
+    // 首次安装引导（3.3.0 之前的旧版本由迁移置 isFirstRun=true 触发）
+    if (GM_getValue(GM_KEY_IS_FIRST_RUN, true)) {
         firstRun()
         return
     }
-    if (new Version(GM_getValue('version', '0.0.0')).compare(new Version('3.3.22')) === VersionState.Low) {
-        alert(i18nList[config.language].configurationIncompatible)
-        try {
-            selectList.clear()
-            GM_deleteValue('selectList')
-            await db.delete()
-            GM_setValue('version', GM_info.script.version)
-            unsafeWindow.location.reload()
-        } catch (error) {
-            log.error(error)
-        }
-        return
-    }
+
+    GM_setValue(GM_KEY_VERSION, GM_info.script.version)
+    watermark.inject()
+
     config.enableBeautify && GM_addStyle(beautifyCSS)
     config.enableWidescreen && GM_addStyle(widescreenCSS)
     if (!await check()) {
@@ -277,7 +279,7 @@ async function main() {
         editConfig.inject()
         return
     }
-    GM_setValue('version', GM_info.script.version)
+
     hijackAddEventListener()
     if (config.autoInjectCheckbox) hijackNodeAppendChild()
     hijackNodeRemoveChild()
@@ -309,7 +311,7 @@ async function main() {
             method: 'GET',
             headers: await getAuth()
         })).json() as Iwara.LocalUser).user
-        let authorProfile = (await (await unlimitedFetch(`https://${apiEndpoint}/profile/dawn`, {
+        let authorProfile = (await (await unlimitedFetch(`https://${apiEndpoint}/profile/${AUTHOR_USERNAME}`, {
             method: 'GET',
             headers: await getAuth()
         })).json() as Iwara.Profile).user

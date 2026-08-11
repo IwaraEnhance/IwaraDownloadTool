@@ -2,6 +2,7 @@ import { originalFetch } from "../core/hijack";
 import { createLogger } from "../core/log";
 import { config } from "../core/config";
 import { db } from "../core/db";
+import { LS_KEY_ACCESS_TOKEN, LS_KEY_TOKEN } from "../core/constants";
 import { getAuth, getPlayload } from "./auth";
 import { parseVideoInfo } from "./video";
 import { isNull, isNullOrUndefined, isString, isUndefined } from "../core/env";
@@ -34,7 +35,7 @@ function handleAuthorizationHeader(init?: RequestInit): void {
     const payload = getPlayload(authorization);
     const token = authorization.split(' ').pop();
     if (payload['type'] === 'refresh_token' && !isUndefined(token)) {
-        localStorage.setItem('token', token);
+        localStorage.setItem(LS_KEY_TOKEN, token);
         config.authorization = token;
         log.debug('refresh_token: 凭证已隐藏');
     }
@@ -47,9 +48,9 @@ async function handleUserTokenResponse(response: Response): Promise<void> {
     const cloneResponse = response.clone();
     if (!cloneResponse.ok) return;
     const { accessToken } = await cloneResponse.json();
-    const token = localStorage.getItem('accessToken');
+    const token = localStorage.getItem(LS_KEY_ACCESS_TOKEN);
     if (isNull(token) || token !== accessToken) {
-        localStorage.setItem('accessToken', accessToken);
+        localStorage.setItem(LS_KEY_ACCESS_TOKEN, accessToken);
     }
 }
 

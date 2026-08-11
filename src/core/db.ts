@@ -2,11 +2,12 @@ import "./env";
 import { isNullOrUndefined } from "./env"
 import { openDB, deleteDB, DBSchema, IDBPDatabase } from 'idb';
 import { createLogger } from "./log";
+import { DB_NAME, DB_VERSION, upgradeDatabase } from "./dbMigration";
 
 const log = createLogger('db');
 
 // 数据库模式定义
-interface IwaraDownloadToolDB extends DBSchema {
+export interface IwaraDownloadToolDB extends DBSchema {
     follows: {
         key: string;
         value: Iwara.User;
@@ -84,54 +85,9 @@ export class Database {
     private dbPromise: Promise<IDBPDatabase<IwaraDownloadToolDB>>;
 
     private constructor() {
-        this.dbPromise = openDB<IwaraDownloadToolDB>('IwaraDownloadTool', 22, {
-            upgrade(db, oldVersion, newVersion, transaction) {
-                if (!db.objectStoreNames.contains('follows')) {
-                    const followsStore = db.createObjectStore('follows', { keyPath: 'id' });
-                    followsStore.createIndex('id', 'id', { unique: true });
-                    followsStore.createIndex('username', 'username', { unique: true });
-                    followsStore.createIndex('name', 'name');
-                    followsStore.createIndex('friend', 'friend');
-                    followsStore.createIndex('following', 'following');
-                    followsStore.createIndex('followedBy', 'followedBy');
-                }
-
-                // 检查并创建 friends 表（如果不存在）
-                if (!db.objectStoreNames.contains('friends')) {
-                    const friendsStore = db.createObjectStore('friends', { keyPath: 'id' });
-                    friendsStore.createIndex('id', 'id', { unique: true });
-                    friendsStore.createIndex('username', 'username', { unique: true });
-                    friendsStore.createIndex('name', 'name');
-                    friendsStore.createIndex('friend', 'friend');
-                    friendsStore.createIndex('following', 'following');
-                    friendsStore.createIndex('followedBy', 'followedBy');
-                }
-
-                // 检查并创建 videos 表（如果不存在）
-                if (!db.objectStoreNames.contains('videos')) {
-                    const videosStore = db.createObjectStore('videos', { keyPath: 'ID' });
-                    videosStore.createIndex('ID', 'ID', { unique: true });
-                    videosStore.createIndex('UploadTime', 'UploadTime');
-                    videosStore.createIndex('Private', 'Private');
-                    videosStore.createIndex('Unlisted', 'Unlisted');
-                    videosStore.createIndex('Type', 'Type');
-                }
-
-                // 检查并创建 idmap 表（如果不存在）
-                if (!db.objectStoreNames.contains('idmap')) {
-                    const idmapStore = db.createObjectStore('idmap', { keyPath: 'ID' });
-                    idmapStore.createIndex('ID', 'ID', { unique: true });
-                }
-
-                // 删除旧版 caches 表（v20 → v21），缓存数据会重新生成
-                if (oldVersion < 21 && db.objectStoreNames.contains('caches' as any)) {
-                    db.deleteObjectStore('caches' as any);
-                }
-                // 删除旧版 pairs 表（v21 → v22），缓存数据会重新生成
-                if (oldVersion < 22 && db.objectStoreNames.contains('pairs' as any)) {
-                    db.deleteObjectStore('pairs' as any);
-                }
-            }
+        this.dbPromise = openDB<IwaraDownloadToolDB>(DB_NAME, DB_VERSION, {
+            // 数据库 schema 迁移逻辑见 dbMigration.ts
+            upgrade: (db, oldVersion) => upgradeDatabase(db, oldVersion),
         });
     }
 
@@ -679,7 +635,7 @@ export class Database {
     public async delete(): Promise<void> {
         const db = await this.getDB();
         db.close();
-        await deleteDB('IwaraDownloadTool');
+        await deleteDB(DB_NAME);
     }
 }
 
