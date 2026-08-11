@@ -6,15 +6,17 @@ import { renderNode, unlimitedFetch } from "../core/extension";
 import { check } from "../network/envCheck";
 import { getAuth, refreshToken } from "../network/auth";
 import { newToast, toastNode } from "./notify";
-import { aria2TaskCheckAndRestart } from "../download/aria2";
 import { parseVideoInfo } from "../network/video";
 import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from "../download/downloadQueue";
 import { importConfig } from "./configUi";
 import { syncCachedToMediaCenter } from "../network/mediaCenter";
-import { originalNodeAppendChild, originalConsole, originalAddEventListener } from "../core/hijack";
+import { originalNodeAppendChild, originalAddEventListener } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { i18nList, type Language } from "../i18n";
 import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "../main";
 import site from "../data/site.json";
+
+const log = createLogger('UI');
 
 /** 一个月的毫秒数（计算值，JSON 只能存字面量无法表达，故保留在 TS） */
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
@@ -111,45 +113,206 @@ export async function injectCheckbox(element: Element) {
     }
 
     if (getPageType() === PageType.Playlist) {
-        let deletePlaylistItme = renderNode({
-            nodeType: 'button',
-            attributes: {
-                videoID: ID
-            },
-            childs: '%#delete#%',
-            className: 'deleteButton',
-            events: {
-                click: async (event: Event) => {
-                    if ((await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
-                        method: 'DELETE',
-                        headers: await getAuth()
-                    })).ok) {
-                        newToast(ToastType.Info, { text: `${Title} %#deleteSucceed#%`, close: true }).show()
-                        deletePlaylistItme.remove()
+        // 仅在当前用户是该播放列表的所有者时才显示删除按钮
+        if (await isCurrentUserPlaylistOwner(unsafeWindow.location.pathname.split('/')[2])) {
+            let deletePlaylistItme = renderNode({
+                nodeType: 'button',
+                attributes: {
+                    videoID: ID
+                },
+                childs: '%#delete#%',
+                className: 'deleteButton',
+                events: {
+                    click: async (event: Event) => {
+                        if ((await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
+                            method: 'DELETE',
+                            headers: await getAuth()
+                        })).ok) {
+                            newToast(ToastType.Info, { text: `${Title} %#deleteSucceed#%`, close: true }).show()
+                            deletePlaylistItme.remove()
+                        }
+                        event.preventDefault()
+                        event.stopPropagation()
+                        event.stopImmediatePropagation()
+                        return false
                     }
-                    event.preventDefault()
-                    event.stopPropagation()
-                    event.stopImmediatePropagation()
-                    return false
                 }
-            }
-        })
-        originalNodeAppendChild.call(item, deletePlaylistItme)
+            })
+            originalNodeAppendChild.call(item, deletePlaylistItme)
+        }
     }
+}
+
+// ── 播放列表所有者判断（用于决定是否显示删除按钮） ──
+// 当前登录用户缓存（Promise 缓存，避免并发重复请求）
+let localUserPromise: Promise<Iwara.User | null> | null = null
+// 播放列表所有者 ID 缓存（按 playlistId 缓存 Promise）
+let playlistOwnerPromise: { playlistId: string, promise: Promise<string> } | null = null
+
+/** 获取当前登录用户（缓存） */
+function getLocalUser(): Promise<Iwara.User | null> {
+    if (localUserPromise === null) {
+        localUserPromise = (async () => {
+            try {
+                if (!isLoggedIn()) return null
+                const res = await unlimitedFetch(`https://${apiEndpoint}/user`, {
+                    method: 'GET',
+                    headers: await getAuth()
+                })
+                if (!res.ok) return null
+                return (await res.json() as Iwara.LocalUser).user ?? null
+            } catch (error) {
+                log.warn('Failed to get local user:', error)
+                return null
+            }
+        })()
+    }
+    return localUserPromise
+}
+
+/** 获取播放列表所有者的用户 ID（按播放列表 ID 缓存） */
+function getPlaylistOwnerId(playlistId: string): Promise<string> {
+    if (playlistOwnerPromise?.playlistId !== playlistId) {
+        playlistOwnerPromise = {
+            playlistId,
+            promise: (async () => {
+                try {
+                    const res = await unlimitedFetch(`https://${apiEndpoint}/playlist/${playlistId}`, {
+                        method: 'GET',
+                        headers: await getAuth()
+                    })
+                    if (!res.ok) return ''
+                    return (await res.json() as Iwara.Playlist).playlist?.user?.id ?? ''
+                } catch (error) {
+                    log.warn('Failed to get playlist owner:', error)
+                    return ''
+                }
+            })()
+        }
+    }
+    return playlistOwnerPromise.promise
+}
+
+/** 判断当前用户是否为指定播放列表的所有者 */
+async function isCurrentUserPlaylistOwner(playlistId: string): Promise<boolean> {
+    const localUser = await getLocalUser()
+    if (isNullOrUndefined(localUser)) return false
+    const ownerId = await getPlaylistOwnerId(playlistId)
+    return ownerId !== '' && localUser.id === ownerId
 }
 
 
 
+/** 配置编辑 schema：声明每个配置项的渲染方式、分组、显隐条件与特殊行为。
+ * 新增配置项只需在此数组加一行；渲染（pageChange）、回写（configChange）、
+ * 显隐联动（dependsOn）均由本表驱动。 */
+interface ConfigField {
+    name: string
+    type: 'switch' | 'text' | 'password' | 'number'
+    /** 该字段出现在哪些标签页 */
+    tabs: string[]
+    /** 页内分组（同组渲染为一个 fieldset，缺省则直接平铺） */
+    group?: string
+    visible?: (target: Config) => boolean
+    dependsOn?: string
+    help?: { text: string; href: string }
+    get?: (name: string, defaultValue?: any) => any
+    onSet?: (target: Config, e: Event) => void
+    defaultValue?: any
+    rerender?: boolean
+}
+
+/** 标签页定义：下载器页按 downloadType 显隐，MediaCenter 额外要求实验性功能 */
+const TABS: { id: string; visible: (target: Config) => boolean }[] = [
+    { id: 'general', visible: () => true },
+    { id: 'download', visible: () => true },
+    { id: 'aria2', visible: (target) => target.downloadType === DownloadType.Aria2 },
+    { id: 'iwaradl', visible: (target) => target.downloadType === DownloadType.Iwaradl },
+    { id: 'mediaCenter', visible: (target) => target.downloadType === DownloadType.Aria2 && target.experimentalFeatures },
+    // 高级页（实验性 / 风险 / 调试）固定在最后
+    { id: 'advanced', visible: () => true },
+]
+
+const CONFIG_FIELDS: ConfigField[] = [
+    // 常规页：下载行为
+    { name: 'checkPriority', type: 'switch', tabs: ['general'], group: 'download', rerender: true },
+    { name: 'checkDownloadLink', type: 'switch', tabs: ['general'], group: 'download' },
+    { name: 'autoDownloadMetadata', type: 'switch', tabs: ['general'], group: 'download' },
+    { name: 'autoCopySaveFileName', type: 'switch', tabs: ['general'], group: 'download' },
+    // 常规页：选择与关注
+    { name: 'autoInjectCheckbox', type: 'switch', tabs: ['general'], group: 'selection' },
+    { name: 'autoFollow', type: 'switch', tabs: ['general'], group: 'selection' },
+    { name: 'autoLike', type: 'switch', tabs: ['general'], group: 'selection' },
+    { name: 'filterLikedVideos', type: 'switch', tabs: ['general'], group: 'selection' },
+    // 常规页：可见性
+    {
+        name: 'addUnlistedAndPrivate', type: 'switch', tabs: ['general'], group: 'visibility',
+        onSet: (target, e) => { const checked = (e.target as HTMLInputElement).checked; target.addUnlistedAndPrivate = checked; if (checked) target.filterUnlistedAndPrivate = false }
+    },
+    {
+        name: 'filterUnlistedAndPrivate', type: 'switch', tabs: ['general'], group: 'visibility',
+        onSet: (target, e) => { const checked = (e.target as HTMLInputElement).checked; target.filterUnlistedAndPrivate = checked; if (checked) target.addUnlistedAndPrivate = false }
+    },
+    // 常规页：界面
+    { name: 'autoCollapseMenu', type: 'switch', tabs: ['general'], group: 'interface' },
+    { name: 'enableWidescreen', type: 'switch', tabs: ['general'], group: 'interface' },
+    { name: 'enableBeautify', type: 'switch', tabs: ['general'], group: 'interface' },
+    // 高级页（实验性 / 风险 / 调试）
+    { name: 'experimentalFeatures', type: 'switch', tabs: ['advanced'], rerender: true },
+    { name: 'enableUnsafeMode', type: 'switch', tabs: ['advanced'] },
+    {
+        name: 'isDebug', type: 'switch', tabs: ['advanced'], defaultValue: false,
+        get: (name, defaultValue) => GM_getValue(name, defaultValue),
+        onSet: (target, e) => { GM_setValue('isDebug', (e.target as HTMLInputElement).checked); unsafeWindow.location.reload() }
+    },
+    // 下载页（下载画质在前，下载位置在后）
+    { name: 'downloadPriority', type: 'text', tabs: ['download'], group: 'download', visible: (target) => target.checkPriority },
+    { name: 'downloadPath', type: 'text', tabs: ['download'], group: 'download', help: { text: '%#variable#%', href: 'https://github.com/IwaraEnhance/IwaraDownloadTool/wiki/路径可用变量' } },
+    { name: 'pathNormalize', type: 'switch', tabs: ['download'], group: 'pathNormalize' },
+    { name: 'pathReplaceEmojis', type: 'switch', tabs: ['download'], group: 'pathNormalize' },
+    { name: 'pathFoldMarks', type: 'switch', tabs: ['download'], group: 'pathNormalize' },
+    { name: 'pathSanitize', type: 'switch', tabs: ['download'], group: 'pathNormalize' },
+    { name: 'pathTruncate', type: 'switch', tabs: ['download'], group: 'pathNormalize' },
+    { name: 'pathTitleMaxLength', type: 'number', tabs: ['download'], group: 'pathNormalize', dependsOn: 'pathTruncate' },
+    { name: 'pathAliasMaxLength', type: 'number', tabs: ['download'], group: 'pathNormalize', dependsOn: 'pathTruncate' },
+    // Aria2 页（标签页本身已按 downloadType 显隐）
+    { name: 'aria2Path', type: 'text', tabs: ['aria2'], group: 'aria2' },
+    { name: 'aria2Token', type: 'password', tabs: ['aria2'], group: 'aria2' },
+    // 代理（Aria2 / iwaradl 页共用）
+    { name: 'downloadProxy', type: 'text', tabs: ['aria2', 'iwaradl'], group: 'proxy' },
+    { name: 'downloadProxyUsername', type: 'text', tabs: ['aria2', 'iwaradl'], group: 'proxy' },
+    { name: 'downloadProxyPassword', type: 'password', tabs: ['aria2', 'iwaradl'], group: 'proxy' },
+    // MediaCenter 页（标签页已含 downloadType + experimentalFeatures 条件）
+    { name: 'mediaCenterApi', type: 'text', tabs: ['mediaCenter'], group: 'mediaCenter', help: { text: '%#mediaCenterInfo#%', href: 'https://github.com/dawn-lc/MediaCenter' } },
+    { name: 'mediaCenterApiKey', type: 'password', tabs: ['mediaCenter'], group: 'mediaCenter' },
+    // iwaradl 页
+    { name: 'iwaradlPath', type: 'text', tabs: ['iwaradl'], group: 'iwaradl', help: { text: '%#iwaradlLink#%', href: 'https://github.com/Izumiko/iwaradl' } },
+    { name: 'iwaradlToken', type: 'password', tabs: ['iwaradl'], group: 'iwaradl' },
+]
+
 export class configEdit {
-    source!: configEdit;
     target: Config
-    interfacePage: HTMLParagraphElement;
     interface: HTMLDivElement;
+    tabButtons: HTMLDivElement;
+    tabPanels: HTMLDivElement;
+    activeTab = 'general';
     constructor(config: Config) {
         this.target = config
         this.target.configChange = (item: string) => { this.configChange.call(this, item) }
-        this.interfacePage = renderNode({
-            nodeType: 'p'
+        this.tabButtons = renderNode({
+            nodeType: 'div',
+            className: 'tabs'
+        })
+        this.tabPanels = renderNode({
+            nodeType: 'div',
+            className: 'tabPanels',
+            childs: TABS.map(tab => ({
+                nodeType: 'div',
+                className: 'tabPanel',
+                attributes: {
+                    'data-tab': tab.id
+                }
+            }))
         })
 
         let save = renderNode({
@@ -195,55 +358,8 @@ export class configEdit {
                             nodeType: 'h2',
                             childs: '%#appName#%'
                         },
-                        {
-                            nodeType: 'label',
-                            childs: [
-                                '%#language#% ',
-                                {
-                                    nodeType: 'input',
-                                    className: 'inputRadioLine',
-                                    attributes: {
-                                        name: 'language',
-                                        type: 'text',
-                                        value: this.target.language
-                                    },
-                                    events: {
-                                        change: (event: Event) => {
-                                            this.target.language = (event.target as HTMLInputElement).value as Language
-                                        }
-                                    }
-                                }
-                            ]
-                        },
-                        this.downloadTypeSelect(),
-                        this.interfacePage,
-                        this.switchButton('checkPriority'),
-                        this.switchButton('checkDownloadLink'),
-                        this.switchButton('autoFollow'),
-                        this.switchButton('autoLike'),
-                        this.switchButton('filterLikedVideos'),
-                        this.switchButton('autoInjectCheckbox'),
-                        this.switchButton('autoDownloadMetadata'),
-                        this.switchButton('autoCopySaveFileName'),
-                        this.switchButton('addUnlistedAndPrivate', undefined, (name, e) => {
-                            const checked = (e.target as HTMLInputElement).checked
-                            this.target.addUnlistedAndPrivate = checked
-                            if (checked) this.target.filterUnlistedAndPrivate = false
-                        }),
-                        this.switchButton('filterUnlistedAndPrivate', undefined, (name, e) => {
-                            const checked = (e.target as HTMLInputElement).checked
-                            this.target.filterUnlistedAndPrivate = checked
-                            if (checked) this.target.addUnlistedAndPrivate = false
-                        }),
-                        this.switchButton('autoCollapseMenu'),
-                        this.switchButton('experimentalFeatures'),
-                        this.switchButton('enableUnsafeMode'),
-                        this.switchButton('enableWidescreen'),
-                        this.switchButton('enableBeautify'),
-                        this.switchButton('isDebug', GM_getValue, (name: string, e) => {
-                            GM_setValue(name, (e.target as HTMLInputElement).checked)
-                            unsafeWindow.location.reload()
-                        }, false),
+                        this.tabButtons,
+                        this.tabPanels
                     ]
                 },
                 {
@@ -257,6 +373,19 @@ export class configEdit {
             ]
         })
 
+    }
+    /** 按 schema 渲染单个配置项（switch 用开关，其余用输入框，带 help/dependsOn） */
+    private renderField(field: ConfigField): Element {
+        if (field.type === 'switch') {
+            return this.switchButton(field.name, field.get, field.onSet ? (name, e) => field.onSet!(this.target, e) : undefined, field.defaultValue)
+        }
+        const help = field.help ? renderNode({
+            nodeType: 'a',
+            childs: field.help.text,
+            className: 'rainbow-text',
+            attributes: { style: 'float: inline-end;', href: field.help.href }
+        }) : undefined
+        return this.inputComponent(field.name, field.type, help, undefined, undefined, field.dependsOn)
     }
     private switchButton(name: string, get?: (name: string, defaultValue?: any) => any, set?: (name: string, e: Event) => void, defaultValue?: boolean) {
         return renderNode({
@@ -291,9 +420,12 @@ export class configEdit {
             ]
         })
     }
-    private inputComponent(name: string, type?: InputType, help?: HTMLElement, get?: (name: string) => void, set?: (name: string, e: Event) => void) {
+    private inputComponent(name: string, type?: InputType, help?: HTMLElement, get?: (name: string) => void, set?: (name: string, e: Event) => void, dependsOn?: string) {
         return renderNode({
             nodeType: 'label',
+            className: 'fieldLine',
+            // dependsOn：声明本输入框由哪个开关控制显隐（关闭开关时隐藏，开启时显示）
+            attributes: dependsOn ? { 'data-depends-on': dependsOn } : undefined,
             childs: [
                 {
                     nodeType: 'span',
@@ -315,7 +447,8 @@ export class configEdit {
                                 set(name, e)
                                 return
                             } else {
-                                this.target[name] = (e.target as HTMLInputElement).value
+                                const input = e.target as HTMLInputElement
+                                this.target[name] = input.type === 'number' ? Number(input.value) : input.value
                             }
                         }
                     }
@@ -326,9 +459,11 @@ export class configEdit {
     private downloadTypeSelect() {
         return renderNode({
             nodeType: 'fieldset',
+            className: 'downloadType',
             childs: [
                 {
-                    nodeType: 'legend',
+                    nodeType: 'div',
+                    className: 'fieldTitle',
                     childs: '%#downloadType#%'
                 },
                 ...Object.keys(DownloadType).filter((i: any) => isNaN(Number(i))).map((type: string, index: number) =>
@@ -356,115 +491,141 @@ export class configEdit {
             ]
         })
     }
-    private appendAll(items: (Element | Node)[]) {
-        items.forEach(i => originalNodeAppendChild.call(this.interfacePage, i))
+    /** 根据依赖开关的当前状态，控制带 data-depends-on 的输入框显隐（关闭开关则隐藏其依赖输入框） */
+    private updateVisibility() {
+        this.interface.querySelectorAll<HTMLElement>('[data-depends-on]').forEach(element => {
+            const dependsOn = element.dataset.dependsOn
+            if (dependsOn) element.style.display = this.target[dependsOn] ? '' : 'none'
+        })
     }
     private configChange(item: string) {
-        switch (item) {
-            case 'downloadType':
-                const radios = this.interface.querySelectorAll(`[name=${item}]`) as NodeListOf<HTMLInputElement>
-                radios.forEach(radio => {
-                    radio.checked = Number(radio.value) === Number(this.target.downloadType)
-                })
-                this.pageChange()
-                break
-            case 'checkPriority':
-            case 'experimentalFeatures':
-                this.pageChange()
-                break
-            default:
-                let element = this.interface.querySelector(`[name=${item}]`) as HTMLInputElement
-                if (element) {
-                    switch (element.type) {
-                        case 'radio':
-                            element.value = this.target[item]
-                            break
-                        case 'checkbox':
-                            element.checked = this.target[item]
-                            break
-                        case 'text':
-                        case 'password':
-                            element.value = this.target[item]
-                            break
-                        default:
-                            break
-                    }
-                }
-                break
+        if (item === 'downloadType') {
+            // 下载方式：同步 radio 选中态，重建标签页（不自动跳转，停留在当前页）
+            this.interface.querySelectorAll<HTMLInputElement>('[name=downloadType]').forEach(radio => {
+                radio.checked = Number(radio.value) === Number(this.target.downloadType)
+            })
+            this.renderAllTabs()
+            return
         }
+        // 影响布局的字段（其 visible 条件变化）→ 重建标签页
+        if (CONFIG_FIELDS.find(field => field.name === item)?.rerender) {
+            this.renderAllTabs()
+            return
+        }
+        // 普通字段：同步 DOM 值（覆盖互斥联动、跨页远程同步等非事件路径）
+        const element = this.interface.querySelector<HTMLInputElement>(`[name=${item}]`)
+        if (element) {
+            if (element.type === 'checkbox') element.checked = this.target[item]
+            else element.value = this.target[item]
+        }
+        // 刷新依赖显隐（开关切换即时控制其依赖输入框的显示/隐藏）
+        this.updateVisibility()
     }
-    private pageChange() {
-        while (this.interfacePage.hasChildNodes()) {
-            this.interfacePage.removeChild(this.interfacePage.firstChild!)
+    /** 切换标签页：仅切换显示与激活态，不重建内容（避免丢失输入焦点） */
+    private tabChange(tab: string) {
+        this.activeTab = tab
+        this.tabButtons.querySelectorAll<HTMLButtonElement>('button.tab').forEach(button => {
+            button.classList.toggle('active', button.dataset.tab === tab)
+        })
+        this.tabPanels.querySelectorAll<HTMLElement>('.tabPanel').forEach(panel => {
+            panel.style.display = panel.dataset.tab === tab ? '' : 'none'
+        })
+        this.updateVisibility()
+    }
+    /** 重建标签栏与所有可见页内容（下载方式 / rerender 变化时调用） */
+    private renderAllTabs() {
+        // 当前激活页若已不再可见（如切换下载方式后下载器页消失），回退到常规页，避免所有面板都隐藏
+        if (!TABS.find(tab => tab.id === this.activeTab && tab.visible(this.target))) {
+            this.activeTab = 'general'
         }
-        let downloadConfigInput = [
-            this.inputComponent('downloadPath', 'text', renderNode({
-                nodeType: 'a',
-                childs: '%#variable#%',
-                className: 'rainbow-text',
+        // 标签栏：按条件显隐 + 激活态
+        while (this.tabButtons.hasChildNodes()) {
+            this.tabButtons.removeChild(this.tabButtons.firstChild!)
+        }
+        for (const tab of TABS) {
+            if (!tab.visible(this.target)) continue
+            originalNodeAppendChild.call(this.tabButtons, renderNode({
+                nodeType: 'button',
+                className: this.activeTab === tab.id ? ['tab', 'active'] : 'tab',
                 attributes: {
-                    style: 'float: inline-end;',
-                    href: 'https://github.com/IwaraEnhance/IwaraDownloadTool/wiki/路径可用变量'
+                    'data-tab': tab.id,
+                    type: 'button'
+                },
+                childs: `%#${tab.id}Tab#%`,
+                events: {
+                    click: () => { this.tabChange(tab.id) }
                 }
             }))
-        ]
-        let proxyConfigInput = [
-            this.inputComponent('downloadProxy'),
-            this.inputComponent('downloadProxyUsername'),
-            this.inputComponent('downloadProxyPassword', 'password')
-        ]
-        let aria2ConfigInput = [
-            this.inputComponent('aria2Path'),
-            this.inputComponent('aria2Token', 'password'),
-            ...proxyConfigInput
-        ]
-        let mediaCenterConfigInput = [
-            this.inputComponent('mediaCenterApi', 'text', renderNode({
-                nodeType: 'a',
-                childs: '%#mediaCenterInfo#%',
-                className: 'rainbow-text',
-                attributes: {
-                    style: 'float: inline-end;',
-                    href: 'https://github.com/dawn-lc/MediaCenter'
-                }
-            })),
-            this.inputComponent('mediaCenterApiKey', 'password')
-        ]
-        let iwaradlConfigInput = [
-            this.inputComponent('iwaradlPath', 'text', renderNode({
-                nodeType: 'a',
-                childs: '%#iwaradlLink#%',
-                className: 'rainbow-text',
-                attributes: {
-                    style: 'float: inline-end;',
-                    href: 'https://github.com/Izumiko/iwaradl'
-                }
-            })),
-            this.inputComponent('iwaradlToken', 'password'),
-            ...proxyConfigInput
-        ]
-        switch (this.target.downloadType) {
-            case DownloadType.Aria2:
-                this.appendAll([...downloadConfigInput, ...aria2ConfigInput])
-                if (this.target.experimentalFeatures) {
-                    this.appendAll(mediaCenterConfigInput)
-                }
-                break
-            case DownloadType.Iwaradl:
-                this.appendAll([...downloadConfigInput, ...iwaradlConfigInput])
-                break
-            default:
-                this.appendAll(downloadConfigInput)
-                break
         }
-        if (this.target.checkPriority) {
-            originalNodeAppendChild.call(this.interfacePage, this.inputComponent('downloadPriority'))
+        // 各页内容：按 tab 过滤 schema，再按 group 渲染为 fieldset（无 group 则平铺）
+        for (const tab of TABS) {
+            const panel = this.tabPanels.querySelector(`.tabPanel[data-tab=${tab.id}]`) as HTMLElement
+            while (panel.hasChildNodes()) {
+                panel.removeChild(panel.firstChild!)
+            }
+            if (!tab.visible(this.target)) {
+                panel.style.display = 'none'
+                continue
+            }
+            if (tab.id === 'general') {
+                originalNodeAppendChild.call(panel, renderNode({
+                    nodeType: 'label',
+                    className: 'languageLine',
+                    childs: [
+                        '%#language#% ',
+                        {
+                            nodeType: 'input',
+                            className: 'inputRadioLine',
+                            attributes: {
+                                name: 'language',
+                                type: 'text',
+                                value: this.target.language
+                            },
+                            events: {
+                                change: (event: Event) => {
+                                    this.target.language = (event.target as HTMLInputElement).value as Language
+                                }
+                            }
+                        }
+                    ]
+                }))
+                originalNodeAppendChild.call(panel, this.downloadTypeSelect())
+            }
+            const groups = new Map<string, ConfigField[]>()
+            for (const field of CONFIG_FIELDS) {
+                if (!field.tabs.includes(tab.id)) continue
+                if (field.visible && !field.visible(this.target)) continue
+                const key = field.group ?? '__flat__'
+                const list = groups.get(key) ?? []
+                list.push(field)
+                groups.set(key, list)
+            }
+            for (const [group, fields] of groups) {
+                if (group === '__flat__') {
+                    fields.forEach(field => originalNodeAppendChild.call(panel, this.renderField(field)))
+                } else {
+                    originalNodeAppendChild.call(panel, renderNode({
+                        nodeType: 'fieldset',
+                        childs: [
+                            {
+                                nodeType: 'div',
+                                className: 'fieldTitle',
+                                childs: `%#${group}Group#%`
+                            },
+                            ...fields.map(field => this.renderField(field))
+                        ]
+                    }))
+                }
+            }
+            panel.style.display = this.activeTab === tab.id ? '' : 'none'
         }
+        // 动态渲染完成后应用初始显隐（依据当前开关状态）
+        this.updateVisibility()
     }
     public inject() {
         if (!unsafeWindow.document.querySelector('#pluginConfig')) {
             originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)
-            this.configChange('downloadType')
+            this.renderAllTabs()
         }
     }
 }
@@ -482,7 +643,7 @@ export class menu {
                     if (isNullOrUndefined(value) || target.pageType === value) return true
                     const ok = Reflect.set(target, prop, value)
                     this.pageChange()
-                    GM_getValue('isDebug') && originalConsole.debug(`[Debug] Page change to ${this.pageType}`)
+                    log.debug(`Page change to ${this.pageType}`)
                     return ok
                 }
                 return Reflect.set(target, prop, value)
@@ -556,7 +717,7 @@ export class menu {
             body.interface.classList.add('expanded');
         }
 
-        body.observer = new MutationObserver((mutationsList) => body.pageType = getPageType(mutationsList) ?? body.pageType)
+        body.observer = new MutationObserver(() => body.pageType = getPageType())
         body.pageType = PageType.Page
         return body
     }
@@ -607,10 +768,10 @@ export class menu {
 
         const MAX_FIND_PAGES = site.maxFindPages;
         let pageCount = 0;
-        GM_getValue('isDebug') && originalConsole.debug(`[Debug] Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
+        log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
 
         while (pageCount < MAX_FIND_PAGES) {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Fetching page ${pageCount}.`);
+            log.debug(`Fetching page ${pageCount}.`);
             const response = await unlimitedFetch(
                 `https://${apiEndpoint}/videos?subscribed=true&limit=50&rating=${rating()}&page=${pageCount}`,
                 { method: 'GET', headers: await getAuth() },
@@ -620,40 +781,40 @@ export class menu {
                     onRetry: async () => { await refreshToken() }
                 }
             );
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Received response, parsing JSON.');
+            log.debug('Received response, parsing JSON.');
             const data = (await response.json() as Iwara.IPage).results as Iwara.Video[];
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Page ${pageCount} returned ${data.length} videos.`);
+            log.debug(`Page ${pageCount} returned ${data.length} videos.`);
             data.forEach(info => info.user.following = true);
             const videoPromises = data.map(info => parseVideoInfo({
                 Type: 'cache',
                 ID: info.id,
                 RAW: info
             }));
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Initializing VideoInfo promises.');
+            log.debug('Initializing VideoInfo promises.');
             const videoInfos = await Promise.all(videoPromises);
             parseUnlistedAndPrivateVideos.push(...videoInfos);
             let test = videoInfos.filter(i => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] All VideoInfo objects initialized.');
+            log.debug('All VideoInfo objects initialized.');
             if (test && thisMonthUnlistedAndPrivateVideos.intersect(videoInfos, 'ID').any()) {
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] Found private video on page ${pageCount}.`);
+                log.debug(`Found private video on page ${pageCount}.`);
                 break;
             }
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Latest private video not found on page ${pageCount}, continuing.`);
+            log.debug(`Latest private video not found on page ${pageCount}, continuing.`);
             pageCount++;
 
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Incremented page to ${pageCount}, delaying next fetch.`);
+            log.debug(`Incremented page to ${pageCount}, delaying next fetch.`);
             await delay(100);
         }
-        GM_getValue('isDebug') && originalConsole.debug('[Debug] Fetch loop ended. Start updating the database');
+        log.debug('Fetch loop ended. Start updating the database');
         const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map(v => v.ID));
         const toUpdate = parseUnlistedAndPrivateVideos.difference(
             existingVideos.filter(v => v.Type === 'full'), 'ID')
         if (toUpdate.any()) {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Need to update ${toUpdate.length} pieces of data.`);
+            log.debug(`Need to update ${toUpdate.length} pieces of data.`);
             await db.bulkPutVideos(toUpdate)
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] Update Completed.`);
+            log.debug(`Update Completed.`);
         } else {
-            GM_getValue('isDebug') && originalConsole.debug(`[Debug] No need to update data.`);
+            log.debug(`No need to update data.`);
         }
     }
 
@@ -743,13 +904,6 @@ export class menu {
             }))
         })
 
-        let aria2TaskCheckButton = this.button('aria2TaskCheck', () => {
-            aria2TaskCheckAndRestart()
-        })
-        if (config.experimentalFeatures) {
-            originalNodeAppendChild.call(this.interfacePage, aria2TaskCheckButton)
-        }
-
         switch (this.pageType) {
             case PageType.Video:
                 this.appendAll([downloadThisButton, ...selectButtons, ...baseButtons])
@@ -761,6 +915,7 @@ export class menu {
             case PageType.Subscriptions:
             case PageType.Playlist:
             case PageType.Favorites:
+            case PageType.History:
             case PageType.Account:
                 this.appendAll([...selectButtons, ...baseButtons])
                 break;
@@ -770,6 +925,15 @@ export class menu {
             case PageType.ImageList:
             case PageType.ForumSection:
             case PageType.ForumThread:
+            case PageType.Post:
+            case PageType.Friends:
+            case PageType.Messages:
+            case PageType.Notifications:
+            case PageType.Auth:
+            case PageType.Product:
+            case PageType.Create:
+            case PageType.Rule:
+            case PageType.Admin:
             default:
                 this.appendAll(baseButtons)
                 break;
@@ -779,7 +943,7 @@ export class menu {
         if (config.addUnlistedAndPrivate && !config.filterUnlistedAndPrivate && this.pageType === PageType.VideoList) {
             this.parseUnlistedAndPrivate()
         } else {
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Conditions not met: addUnlistedAndPrivate or pageType mismatch.');
+            log.debug('Conditions not met: addUnlistedAndPrivate or pageType mismatch.');
         }
     }
     public inject() {
@@ -787,7 +951,7 @@ export class menu {
             this.observer.observe(unsafeWindow.document.getElementById('app')!, { childList: true, subtree: true });
             if (!unsafeWindow.document.querySelector('#pluginMenu')) {
                 originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)
-                this.pageType = getPageType() ?? this.pageType
+                this.pageType = getPageType()
             }
         } catch (error) {
             originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)

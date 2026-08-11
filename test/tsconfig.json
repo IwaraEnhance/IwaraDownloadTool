@@ -5,7 +5,8 @@
         "allowImportingTsExtensions": true,
         "module": "ESNext",
         "types": [
-            "node"
+            "node",
+            "tampermonkey"
         ]
     },
     "include": [

@@ -431,7 +431,13 @@ export class Version implements IVersion {
  */
 export class Dictionary<T> extends Map<string, T> {
     constructor(data: Array<[string, T]> = []) {
-        super(data)
+        // 不用 super(data) 填充：Map 构造器内部通过 this.set() 添加元素，
+        // 若子类 override 了 set（如 SyncDictionary），会在子类自身字段
+        // （如 channel）初始化前被调用而崩溃。改用 super.set() 直接填充。
+        super()
+        for (const [key, value] of data) {
+            super.set(key, value)
+        }
     }
     public toArray(): Array<[string, T]> {
         return Array.from(this)
@@ -710,6 +716,16 @@ export class SyncDictionary<T> extends Dictionary<T> {
                 break;
             }
         }
+    }
+
+    /**
+     * 关闭底层 BroadcastChannel，释放跨页通信资源。
+     * 幂等：多次调用安全；关闭后实例不应再使用。
+     * 浏览器中页面卸载会自动清理，但 Node 测试环境必须显式关闭，
+     * 否则未关闭的 BroadcastChannel 会保持事件循环活跃导致进程无法退出。
+     */
+    public close(): void {
+        this.channel.close();
     }
 }
 

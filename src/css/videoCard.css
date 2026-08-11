@@ -10,7 +10,7 @@
     padding: 2px 5px 2px 5px;
     margin: 0px;
     user-select: none;
-    z-index: 102;
+    z-index: 100;
 }
 
 .downloaded {
@@ -40,7 +40,7 @@
     height: 38px;
     right: 0px;
     cursor: pointer;
-    z-index: 102;
+    z-index: 100;
     top: 22px;
 }
 
@@ -51,7 +51,7 @@
     height: 38px;
     left: 0px;
     cursor: pointer;
-    z-index: 101;
+    z-index: 100;
     border: none;
     padding: 0;
     margin: 3px;

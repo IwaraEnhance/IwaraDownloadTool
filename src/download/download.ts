@@ -4,11 +4,13 @@ import { Path } from "../core/class";
 import { ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch, renderNode } from "../core/extension";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { newToast, toastNode } from "../ui/notify";
 import { analyzeLocalPath, getDownloadPath } from "./downloadPath";
 import { domain } from "../main";
 import { pushDownloadTask } from "./downloadQueue";
+
+const log = createLogger('Download');
 
 /**
  * 通过iwaradl下载视频
@@ -42,7 +44,7 @@ export function iwaradlDownload(videoInfo: FullVideoInfo) {
                 }))
             })
             if (response.ok) {
-                originalConsole.log(`${videoInfo.Title} %#pushTaskSucceed#%`)
+                log.info(`${videoInfo.Title} %#pushTaskSucceed#%`)
                 newToast(
                     ToastType.Info,
                     {

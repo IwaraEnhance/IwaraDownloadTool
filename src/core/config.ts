@@ -1,9 +1,11 @@
 
 import "./env";
 import { isNullOrUndefined, stringify } from "./env";
-import { originalConsole } from "./hijack";
+import { createLogger } from "./log";
 import { DownloadType } from "./enum";
 import { i18nList, Language } from "../i18n";
+
+const log = createLogger('Config');
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,
@@ -33,6 +35,13 @@ const DEFAULT_CONFIG: ImportConfig = {
     iwaradlToken: '',
     mediaCenterApi: 'http://127.0.0.1:3000',
     mediaCenterApiKey: '',
+    pathNormalize: true,
+    pathReplaceEmojis: true,
+    pathFoldMarks: true,
+    pathSanitize: true,
+    pathTruncate: true,
+    pathTitleMaxLength: 72,
+    pathAliasMaxLength: 64,
     priority: {
         'Source': 100,
         '540': 99,
@@ -74,6 +83,13 @@ export class Config {
     iwaradlToken: string = DEFAULT_CONFIG.iwaradlToken
     mediaCenterApi: string = DEFAULT_CONFIG.mediaCenterApi
     mediaCenterApiKey: string = DEFAULT_CONFIG.mediaCenterApiKey
+    pathNormalize: boolean = DEFAULT_CONFIG.pathNormalize
+    pathReplaceEmojis: boolean = DEFAULT_CONFIG.pathReplaceEmojis
+    pathFoldMarks: boolean = DEFAULT_CONFIG.pathFoldMarks
+    pathSanitize: boolean = DEFAULT_CONFIG.pathSanitize
+    pathTruncate: boolean = DEFAULT_CONFIG.pathTruncate
+    pathTitleMaxLength: number = DEFAULT_CONFIG.pathTitleMaxLength
+    pathAliasMaxLength: number = DEFAULT_CONFIG.pathAliasMaxLength
     priority: Record<string, number> = DEFAULT_CONFIG.priority
     constructor(importConfig?: ImportConfig) {
         let body = new Proxy(this, {
@@ -85,7 +101,7 @@ export class Config {
                 if (property === 'language') {
                     return Config.getLanguage(value)
                 }
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                log.debug(`get: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 return value
             },
             set: function (target, property: string, value) {
@@ -94,7 +110,7 @@ export class Config {
                     return true
                 }
                 GM_setValue(property, value)
-                GM_getValue('isDebug') && originalConsole.debug(`[Debug] set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
+                log.debug(`set: ${property} ${/password/i.test(property) || /token/i.test(property) || /authorization/i.test(property) ? '凭证已隐藏' : stringify(value)}`)
                 if (!isNullOrUndefined(target.configChange)) target.configChange(property)
                 return true
             }

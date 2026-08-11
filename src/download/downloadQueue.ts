@@ -5,11 +5,13 @@ import { DownloadType, PageType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch, renderNode } from "../core/extension";
 import { Dictionary } from "../core/class";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { db } from "../core/db";
 import { getAuth, refreshToken } from "../network/auth";
 import { newToast, toastNode } from "../ui/notify";
 import { getDownloadPath } from "./downloadPath";
+
+const log = createLogger('DownloadQueue');
 import { parseVideoInfo } from "../network/video";
 import { checkIsHaveDownloadLink } from "./linkCheck";
 import { aria2API, aria2Download, aria2TaskExtractVideoID } from "./aria2";
@@ -337,12 +339,12 @@ export async function pushDownloadTask(videoInfo: VideoInfo) {
                     default:
                         break
                 }
-                GM_getValue('isDebug') && originalConsole.debug('[Debug] Download task pushed:', videoInfo);
+                log.debug('Download task pushed:', videoInfo);
             }
             selectList.delete(videoInfo.ID)
             break;
         default:
-            GM_getValue('isDebug') && originalConsole.debug('[Debug] Unknown type:', videoInfo);
+            log.debug('Unknown type:', videoInfo);
             break;
     }
 }

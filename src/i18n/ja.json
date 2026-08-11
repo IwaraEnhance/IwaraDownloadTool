@@ -13,6 +13,29 @@
     "mediaCenterApi": "MediaCenter API: ",
     "mediaCenterApiKey": "MediaCenter API キー: ",
     "mediaCenterInfo": "→ MediaCenter ←",
+    "downloadGroup": "ダウンロード",
+    "generalTab": "一般",
+    "advancedTab": "詳細",
+    "downloadTab": "ダウンロード",
+    "aria2Tab": "Aria2",
+    "iwaradlTab": "iwaradl",
+    "mediaCenterTab": "MediaCenter",
+    "aria2Group": "Aria2",
+    "proxyGroup": "プロキシ",
+    "mediaCenterGroup": "MediaCenter",
+    "iwaradlGroup": "iwaradl",
+    "priorityGroup": "画質",
+    "pathNormalizeGroup": "パス正規化",
+    "selectionGroup": "選択",
+    "visibilityGroup": "公開設定",
+    "interfaceGroup": "インターフェース",
+    "pathNormalize": "パス正規化 (NFKC)",
+    "pathReplaceEmojis": "絵文字を置換",
+    "pathFoldMarks": "結合記号を畳む",
+    "pathSanitize": "不正なファイル名文字を除去",
+    "pathTruncate": "タイトル/別名の長さを切り詰める",
+    "pathTitleMaxLength": "タイトル最大長: ",
+    "pathAliasMaxLength": "別名最大長: ",
     "experimentalFeatures": "実験的機能",
     "enableUnsafeMode": "アンセーフモード（自己責任で使用）",
     "enableBeautify": "美化",
@@ -51,7 +74,6 @@
     "settings": "設定を開く",
     "downloadThis": "現在の動画をダウンロード",
     "manualDownload": "手動ダウンロード",
-    "aria2TaskCheck": "Aria2タスク再起動",
     "reverseSelect": "このページで選択を反転",
     "deselectThis": "このページの選択を解除",
     "deselectAll": "すべての選択を解除",
@@ -69,7 +91,18 @@
         {
             "nodeType": "br"
         },
-        "ウェブページのサイドにある灰色のサイドバーをクリックしてスクリプトメニューを展開し、必要に応じてメニューの機能をクリックしてください。"
+        "ウェブページのサイドにある灰色のサイドバーをクリックしてスクリプトメニューを展開し、必要に応じてメニューの機能をクリックしてください。",
+        {
+            "nodeType": "br"
+        },
+        {
+            "nodeType": "br"
+        },
+        "メニューの「設定」をクリックすると設定パネルが開きます。設定はタブで分類されています：一般（ダウンロード動作/選択/公開設定/インターフェース）、ダウンロード（パステンプレートと正規化）、Aria2/iwaradl（ダウンローダーとプロキシ）、MediaCenter、詳細（実験的機能とデバッグ）。",
+        {
+            "nodeType": "br"
+        },
+        "初回使用時は、「ダウンロード」タブのダウンロード先とパス正規化（NFKC、絵文字、不正文字、長さ切り詰め）が要件に合っているか確認することをお勧めします。"
     ],
     "useHelpForInjectCheckbox": "動画カードがある任意のページを開くと、スクリプトは動画カードにチェックボックスを注入します。チェックボックスをクリックするか、動画カードにマウスをホバーしてスペースキーを押すと、この動画が選択されます。",
     "useHelpForCheckDownloadLink": "\"%#checkDownloadLink#%\"機能を有効にすると、動画をダウンロードする前に動画の説明とコメントをチェックします。サードパーティクラウドストレージのダウンロードリンクが見つかった場合、プロンプトが表示され、動画ページを開くことができます。",
@@ -119,7 +152,9 @@
     "parsingFailed": "動画情報の解析に失敗！",
     "autoFollowFailed": "動画作者の自動フォローに失敗！",
     "autoLikeFailed": "動画の自動いいねに失敗！",
-    "aria2TaskRestartError": "再起動が必要なダウンロードタスクの読み取りまたは分析中にエラーが発生しました！",
-    "noAria2TasksNeedRestart": "再起動が必要なダウンロードタスクは見つかりませんでした！",
-    "duplicateTaskAnalysisError": "重複したダウンロードタスクの分析中にエラーが発生しました！"
+    "duplicateTaskAnalysisError": "重複したダウンロードタスクの分析中にエラーが発生しました！",
+    "aria2TrackComplete": "ダウンロード完了",
+    "aria2TrackRestart": "ダウンロードに失敗しました。自動再開しました",
+    "aria2TrackRestartSlow": "ダウンロード速度が遅すぎるため、自動再開しました",
+    "aria2TrackRestartPaused": "タスクが一時停止したため、自動再開しました"
 }

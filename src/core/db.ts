@@ -1,6 +1,9 @@
 import "./env";
 import { isNullOrUndefined } from "./env"
 import { openDB, deleteDB, DBSchema, IDBPDatabase } from 'idb';
+import { createLogger } from "./log";
+
+const log = createLogger('db');
 
 // 数据库模式定义
 interface IwaraDownloadToolDB extends DBSchema {
@@ -590,7 +593,7 @@ export class Database {
             } catch (error) {
                 // GM_download 失败/超时：auto 模式下回退为浏览器原生下载（此时 blob URL 尚未释放，可直接复用）
                 if (mode === 'auto') {
-                    console.warn(`[db] GM_download 不可用，回退浏览器原生下载: ${(error as Error).message}`);
+                    log.warn(`GM_download 不可用，回退浏览器原生下载: ${(error as Error).message}`);
                     triggerBrowserDownload();
                     return;
                 }

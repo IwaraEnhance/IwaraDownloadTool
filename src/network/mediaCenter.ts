@@ -3,12 +3,14 @@ import { delay, isNullOrUndefined, stringify } from "../core/env";
 import { ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch, renderNode } from "../core/extension";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { db } from "../core/db";
 import { newToast, toastNode } from "../ui/notify";
 import { getDownloadPath } from "../download/downloadPath";
 import { getMoreCompleteVideoInfo, parseVideoInfo } from "./video";
 import { pushToMediaCenter } from "../download/aria2TrackManager";
+
+const log = createLogger('MediaCenter');
 
 /**
  * 将浏览器数据库中缓存的视频元数据同步到 MediaCenter
@@ -47,7 +49,7 @@ export async function syncCachedToMediaCenter(): Promise<void> {
     let stepStartTime = phaseStartTime;
 
     const matchedMap = await db.getAllMediaCenterIdMaps(); // 先加载本地已有的映射缓存
-    originalConsole.debug(`[MediaCenter] 步骤1/4 加载本地映射缓存: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
+    log.debug(`步骤1/4 加载本地映射缓存: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
     stepStartTime = Date.now();
 
     const listProgressNode = renderNode({
@@ -71,7 +73,7 @@ export async function syncCachedToMediaCenter(): Promise<void> {
         const result = await response.json();
         const items: Array<{ id: string; fileHash?: string; title?: string }> = result.items;
 
-        originalConsole.debug(`[MediaCenter] 步骤2/4 拉取 MediaCenter 列表: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${items.length} 条）`);
+        log.debug(`步骤2/4 拉取 MediaCenter 列表: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${items.length} 条）`);
         stepStartTime = Date.now();
 
         listProgressNode.firstChild!.textContent =
@@ -109,7 +111,7 @@ export async function syncCachedToMediaCenter(): Promise<void> {
         const prefetchNextBatch = async (): Promise<void> => {
             const t0 = Date.now();
             const { value, done } = await keyBatchIter.next();
-            originalConsole.debug(`[MediaCenter] 批次获取: ${((Date.now() - t0) / 1000).toFixed(1)}s（${value?.length ?? 0} 条）`);
+            log.debug(`批次获取: ${((Date.now() - t0) / 1000).toFixed(1)}s（${value?.length ?? 0} 条）`);
             if (done) {
                 prefetchDone = true;
             } else {
@@ -179,20 +181,20 @@ export async function syncCachedToMediaCenter(): Promise<void> {
             Array.from({ length: Math.min(64, total) }, () => nextVideo())
         );
 
-        originalConsole.debug(`[MediaCenter] 步骤3/4 遍历数据库匹配映射: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${processedCount} 条，映射 ${entriesToSave.length} 条）`);
+        log.debug(`步骤3/4 遍历数据库匹配映射: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${processedCount} 条，映射 ${entriesToSave.length} 条）`);
         stepStartTime = Date.now();
 
         if (entriesToSave.length > 0) {
             await db.bulkPutMediaCenterIdMaps(entriesToSave);
         }
 
-        originalConsole.debug(`[MediaCenter] 步骤4/4 保存映射到本地: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
+        log.debug(`步骤4/4 保存映射到本地: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`);
         const totalTime = (Date.now() - phaseStartTime) / 1000;
 
         listProgressNode.firstChild!.textContent =
             `映射建立完成，共 ${matchedMap.size} 条映射（新增 ${entriesToSave.length} 条），总耗时 ${totalTime.toFixed(1)}s`;
     } catch (error) {
-        originalConsole.error('[MediaCenter] 拉取列表失败:', stringify(error));
+        log.error('拉取列表失败:', stringify(error));
         listProgressToast.hide();
         newToast(ToastType.Error, {
             node: toastNode([
@@ -258,7 +260,7 @@ export async function syncCachedToMediaCenter(): Promise<void> {
                 updateErrors++;
             }
         } catch (error) {
-            originalConsole.warn(`[MediaCenter] 同步异常 ${videoId}:`, stringify(error));
+            log.warn(`同步异常 ${videoId}:`, stringify(error));
             updateErrors++;
         } finally {
             updateProgressNode.firstChild!.textContent =

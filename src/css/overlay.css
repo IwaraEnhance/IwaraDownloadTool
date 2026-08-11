@@ -10,60 +10,143 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    animation: overlayFadeIn .15s ease;
+}
+
+@keyframes overlayFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 #pluginOverlay .main {
     color: var(--text);
-    font-size: 24px;
-    width: 60%;
+    font-size: 16px;
+    line-height: 1.7;
+    width: 520px;
+    max-width: calc(100% - 40px);
+    max-height: 70vh;
     background-color: var(--body);
-    padding: 24px;
+    padding: 28px 32px;
     margin: 10px;
     overflow-y: auto;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+    animation: overlayPanelIn .2s ease;
+}
+
+@keyframes overlayPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(-14px) scale(.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+#pluginOverlay .main p {
+    margin: 0 0 12px 0;
+}
+
+#pluginOverlay .main p:last-child {
+    margin-bottom: 0;
 }
 
 @media (max-width: 640px) {
     #pluginOverlay .main {
         width: 100%;
+        max-width: none;
     }
-}
-
-#pluginOverlay button {
-    padding: 10px 20px;
-    color: var(--primary-text);
-    font-size: 18px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-#pluginOverlay button {
-    background-color: var(--primary);
-}
-
-#pluginOverlay button[disabled] {
-    background-color: var(--muted);
-    cursor: not-allowed;
-}
-
-#pluginOverlay .checkbox {
-    width: 32px;
-    height: 32px;
-    margin: 0 4px 0 0;
-    padding: 0;
 }
 
 #pluginOverlay .checkbox-container {
     display: flex;
     align-items: center;
-    margin: 0 0 10px 0;
+    margin: 16px 0 12px 0;
 }
 
 #pluginOverlay .checkbox-label {
     color: var(--text);
-    font-size: 32px;
-    font-weight: bold;
+    font-size: 16px;
+    font-weight: 600;
     margin-left: 10px;
     display: flex;
     align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+#pluginOverlay .checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid color-mix(in srgb, var(--text) 30%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--body) 92%, var(--text));
+    cursor: pointer;
+    position: relative;
+    transition: background-color .15s, border-color .15s;
+}
+
+#pluginOverlay .checkbox:hover {
+    border-color: var(--primary);
+}
+
+#pluginOverlay .checkbox:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+#pluginOverlay .checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid var(--primary-text);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+#pluginOverlay button {
+    padding: 10px 40px;
+    color: var(--primary-text);
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: var(--primary);
+    transition: filter .15s, transform .1s;
+}
+
+#pluginOverlay button:hover:not([disabled]) {
+    filter: brightness(1.12);
+}
+
+#pluginOverlay button:active:not([disabled]) {
+    transform: scale(.97);
+}
+
+#pluginOverlay button[disabled] {
+    background-color: var(--muted);
+    cursor: not-allowed;
+    filter: none;
+    transform: none;
 }

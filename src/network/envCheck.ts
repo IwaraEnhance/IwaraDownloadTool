@@ -3,9 +3,11 @@ import { isArray, isNullOrUndefined, stringify, UUID } from "../core/env";
 import { DownloadType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch } from "../core/extension";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { newToast, toastNode } from "../ui/notify";
 import { analyzeLocalPath } from "../download/downloadPath";
+
+const log = createLogger('EnvCheck');
 
 /**
  * 检查浏览器环境是否支持下载
@@ -15,7 +17,7 @@ import { analyzeLocalPath } from "../download/downloadPath";
 export async function EnvCheck(): Promise<boolean> {
     try {
         if (GM_info.scriptHandler !== 'ScriptCat' && GM_info.downloadMode !== 'browser') {
-            GM_getValue('isDebug') && originalConsole.debug('[Debug]', GM_info)
+            log.debug(GM_info)
             throw new Error('%#browserDownloadModeError#%')
         }
     } catch (error: any) {

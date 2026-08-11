@@ -4,10 +4,12 @@ import { i18nList } from "../i18n";
 import { ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch } from "../core/extension";
-import { originalConsole } from "../core/hijack";
+import { createLogger } from "../core/log";
 import { db } from "../core/db";
 import { getAuth, refreshToken } from "./auth";
 import { newToast, toastNode } from "../ui/notify";
+
+const log = createLogger('Video');
 import { apiEndpoint } from "../main";
 
 async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage> {
@@ -46,7 +48,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
             case "fail":
             case "partial":
             case "full":
-                GM_getValue('isDebug') && originalConsole.debug(`[debug] try parse full source`)
+                log.debug('try parse full source')
                 let sourceResult = await (await unlimitedFetch(
                     `https://${apiEndpoint}/video/${info.ID}`,
                     {
@@ -59,7 +61,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                         retryDelay: 1000,
                         onRetry: async () => { await refreshToken() },
                         onFail: async (response) => {
-                            GM_getValue("isDebug") && originalConsole.debug("[Debug]", `${response.url} Fail, response: ${await response.clone().text()}`);
+                            log.debug(`${response.url} Fail, response: ${await response.clone().text()}`);
                         }
                     }
                 )).json() as Iwara.IResult
@@ -172,7 +174,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
 
                 DownloadUrl = decodeURIComponent(`https:${Source}`)
 
-                GM_getValue('isDebug') && originalConsole.debug(`[debug] try parse all comment`)
+                log.debug('try parse all comment')
                 Comments = JSON.stringify(await getCommentDatas(ID)).normalize('NFKC')
 
                 return {
