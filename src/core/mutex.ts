@@ -8,7 +8,7 @@ var domain = window.location.hostname
 const isOfficial = site.officialDomains.some(d =>
     domain === d || domain.endsWith('.' + d)
 )
-if (!isOfficial && domain.includes('iwara')) {
+if (!isOfficial && site.phishingKeywords.some(k => domain.includes(k))) {
     // @ts-ignore
     XMLHttpRequest.prototype.open = function () { throw new Error('Blocked') }
     // @ts-ignore

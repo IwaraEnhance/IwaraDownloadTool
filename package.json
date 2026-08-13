@@ -1,7 +1,7 @@
 {
   "name": "iwaradownloadtool",
   "displayName": "IwaraDownloadTool",
-  "version": "3.3.118",
+  "version": "3.3.119",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,6 @@
     "@types/tampermonkey": "^5.0.5",
     "esbuild": "^0.28.1",
     "tsx": "^4.22.3",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }

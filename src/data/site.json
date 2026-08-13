@@ -9,7 +9,11 @@
         "iwara.tv",
         "iwara.ai"
     ],
+    "phishingKeywords": [
+        "iwara"
+    ],
     "apiEndpoint": "api.iwara.tv",
     "syncStartPage": 6000,
-    "maxFindPages": 64
+    "maxFindPages": 64,
+    "pageLimit": 50
 }
