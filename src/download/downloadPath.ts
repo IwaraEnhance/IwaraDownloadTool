@@ -1,6 +1,6 @@
 import "../core/env";
 import { stringify } from "../core/env";
-import { Path } from "../core/class";
+import { Path } from "../core/path";
 import { ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { newToast, toastNode } from "../ui/notify";

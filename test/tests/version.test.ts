@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { Version } from '../../src/core/class.ts';
+import { Version } from '../../src/core/version.ts';
 import { VersionState } from '../../src/core/enum.ts';
 
 const versionTestGroup = new TestGroup('Version 类', '语义化版本号解析与比较测试');

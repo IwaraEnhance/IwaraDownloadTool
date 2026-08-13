@@ -75,7 +75,7 @@ body:
       label: ダウンロードモードは何ですか？
       options:
         - Aria2
-        - IwaraDownloader
+        - iwaradl
         - ブラウザ
         - その他
     validations:

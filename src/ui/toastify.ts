@@ -1,4 +1,4 @@
-import { Dictionary } from "../core/class";
+import { Dictionary } from "../core/dictionary";
 import { debounce, isNullOrUndefined, UUID } from "../core/env";
 export type Gravity = 'top' | 'bottom';
 export type Position = 'left' | 'center' | 'right';

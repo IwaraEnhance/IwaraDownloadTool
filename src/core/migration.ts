@@ -1,4 +1,4 @@
-import { Version } from "./class";
+import { Version } from "./version";
 import { VersionState } from "./enum";
 import { createLogger } from "./log";
 import { i18nList } from "../i18n";

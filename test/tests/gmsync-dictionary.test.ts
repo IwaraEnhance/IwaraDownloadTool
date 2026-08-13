@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { GMSyncDictionary } from '../../src/core/class.ts';
+import { GMSyncDictionary } from '../../src/core/gmSyncDictionary.ts';
 
 const gmsyncTestGroup = new TestGroup('GMSyncDictionary', 'GM 存储同步字典本地操作测试');
 

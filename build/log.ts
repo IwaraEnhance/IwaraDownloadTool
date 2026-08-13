@@ -1,6 +1,6 @@
 /** 构建工具统一日志输出 */
 
-type Tag = 'build' | 'release' | 'i18n' | 'git';
+export type Tag = 'build' | 'release' | 'i18n' | 'git';
 
 export function log(tag: Tag, message: string): void {
     console.log(`[${tag}] ${message}`);

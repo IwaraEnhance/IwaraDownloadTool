@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { SyncDictionary } from '../../src/core/class.ts';
+import { SyncDictionary } from '../../src/core/syncDictionary.ts';
 import { delay } from '../../src/core/env.ts';
 
 const syncTestGroup = new TestGroup('SyncDictionary', 'BroadcastChannel 跨实例同步测试');

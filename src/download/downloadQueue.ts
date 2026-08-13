@@ -5,7 +5,7 @@ import { i18nList } from "../i18n";
 import { DownloadType, PageType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { unlimitedFetch, renderNode } from "../core/extension";
-import { Dictionary } from "../core/class";
+import { Dictionary } from "../core/dictionary";
 import { createLogger } from "../core/log";
 import { db } from "../core/db";
 import { getAuth, refreshToken } from "../network/auth";

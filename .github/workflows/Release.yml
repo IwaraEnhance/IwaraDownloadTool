@@ -29,7 +29,7 @@ jobs:
           ref: master
           fetch-depth: 0
       - name: 安装依赖项
-        run: npm install
+        run: npm ci
       - name: 编译
         run: npm run build ${{ env.release_tag }}
       - name: 获取编译结果

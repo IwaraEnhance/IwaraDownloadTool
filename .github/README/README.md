@@ -7,7 +7,7 @@
 - Batch downloading
 - Supports downloader based on Aria2
 - Automatically checks if third-party cloud storage links are provided by the author in the video description or comments
-- Customizable save location and file names <sup>\*Supported only in Aria2 and IwaraDownloader modes; other download modes support file name customization only</sup>
+- Customizable save location and file names <sup>\*Supported only in Aria2 and iwaradl modes; other download modes support file name customization only</sup>
 - Automatically follow the authors of selected videos <sup>\*Disabled by default, needs to be enabled manually</sup>
 - Automatically like/favorite selected videos <sup>\*Disabled by default, needs to be enabled manually</sup>
 - Forced display of unlisted and private videos <sup>\*Requires following the author</sup>

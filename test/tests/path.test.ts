@@ -1,6 +1,6 @@
 import '../setup.ts';
 import { Test, TestGroup } from '../framework.ts';
-import { Path } from '../../src/core/class.ts';
+import { Path } from '../../src/core/path.ts';
 
 const pathTestGroup = new TestGroup('Path 类', '路径解析与规范化测试');
 

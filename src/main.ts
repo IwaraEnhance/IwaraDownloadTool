@@ -14,7 +14,9 @@ import { createLogger } from "./core/log";
 import { i18nList } from "./i18n";
 import { config, Config } from "./core/config";
 import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
-import { Dictionary, GMSyncDictionary, Version } from "./core/class";
+import { Dictionary } from "./core/dictionary";
+import { GMSyncDictionary } from "./core/gmSyncDictionary";
+import { Version } from "./core/version";
 import { db } from "./core/db";
 import { runMigrations } from "./core/migration";
 import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from "./core/constants";
@@ -40,10 +42,13 @@ if (!domain) {
 
 
 switch (GM_info.scriptHandler) {
-    case 'Via':
     case 'Tampermonkey':
     case 'ScriptCat':
         break;
+    case 'Via':
+        // Via 内置油猴引擎不支持 GM_getTabs/GM_saveTab，且跨页 GM_addValueChangeListener 不可靠，
+        // 会导致跨页同步（selectList/配置/GMLock）静默失效，因此封杀
+        throw `Not support ${GM_info.scriptHandler} (内置油猴引擎不完整，跨页同步不可用)`
     default:
         throw `Not support ${GM_info.scriptHandler}`
 }

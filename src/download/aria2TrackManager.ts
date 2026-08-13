@@ -1,5 +1,5 @@
 import { delay, isConvertibleToNumber, isNullOrUndefined, isString, prune, stringify, UUID } from "../core/env";
-import { GMSyncDictionary } from "../core/class";
+import { GMSyncDictionary } from "../core/gmSyncDictionary";
 import { DownloadType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { db } from "../core/db";

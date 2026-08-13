@@ -1,5 +1,20 @@
+/**
+ * 构建脚本
+ * 职责：类型检查 → 解析元数据模板 → esbuild 编译出压缩/未压缩产物 + .mata.js
+ *
+ * 使用方式:
+ *   npm run build             # dev 渠道（默认: 版本号附加 -dev.<uuid>）
+ *   npm run build preview     # preview 渠道（预览版，Preview.yml 发布）
+ *   npm run build latest      # latest 渠道（正式版，Release.yml 发布）
+ *
+ * 渠道决定产物中的 @version 与 @updateURL/@downloadURL 指向:
+ *   dev     → .../releases/download/dev/...（该 release 不存在，更新检查失败 →
+ *             安装本地产物后不会被自动更新到 preview/latest 渠道，即防意外更新）
+ *   preview → .../releases/download/preview/...
+ *   latest  → .../releases/download/latest/...
+ */
 import esbuild from 'esbuild';
-import { promises, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { promises, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
@@ -25,6 +40,50 @@ function ensureDir(path: string) {
 
 function UUID(): string {
     return randomUUID().replaceAll('-', '');
+}
+
+/** 发布渠道：dev 本地验证 / preview 预览版 / latest 正式版（与 CI 工作流及 GitHub Release 渠道一一对应） */
+const CHANNELS = ['dev', 'preview', 'latest'] as const;
+type Channel = (typeof CHANNELS)[number];
+
+/** 解析渠道参数：`npm run build [channel]`，缺省为 dev */
+function parseChannel(raw: string | undefined): Channel {
+    const channel = (raw ?? 'dev') as Channel;
+    if (!CHANNELS.includes(channel)) {
+        error('build', `无效的发布渠道: ${channel}，可用选项: ${CHANNELS.join(', ')}`);
+        process.exit(1);
+    }
+    return channel;
+}
+
+/** 计算产物版本号：dev 渠道附加 -dev.<uuid> 保证每次构建可区分，preview/latest 使用 package.json 版本 */
+function resolveVersion(packageVersion: string, channel: Channel): string {
+    return channel === 'dev' ? `${packageVersion}-dev.${UUID()}` : packageVersion;
+}
+
+/** 输出 dist 产物清单与大小 */
+function logArtifacts(): void {
+    for (const file of readdirSync(distPath).sort()) {
+        const stat = statSync(join(distPath, file));
+        log('build', `产物: ${file} (${formatSize(stat.size)})`);
+    }
+}
+
+function formatSize(bytes: number): string {
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+}
+
+/** 未压缩产物后处理：统一换行、去除注释与空行（保留 metadata 中的 @ 行） */
+function cleanUnminifiedOutput(text: string): string {
+    return text
+        .replace(/\r\n?|\n/g, '\r\n')
+        .replace(/ \/\* .*? \*\//g, '')
+        .replace(/\/\*\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/ (?![@=]).*$/gm, '')
+        .replace(/\r\n?|\n/g, '\r\n')
+        .replace(/^\s*$/gm, '');
 }
 
 interface MetadataDict {
@@ -137,15 +196,15 @@ async function main() {
     // 解析 metadata 模板
     const mataTemplate = parseMetadata(readFileSync(mataTemplatePath, 'utf8'));
 
-    // 设置版本
-    const releaseTag = process.argv[2] ?? 'dev';
-    const version = `${packageInfo.version}${releaseTag === 'dev' ? '-dev.' + UUID() : ''}`;
+    // 渠道与版本：updateURL/downloadURL 中的 %#release_tag#% 即发布渠道
+    const channel = parseChannel(process.argv[2]);
+    const version = resolveVersion(packageInfo.version, channel);
     mataTemplate.version = version;
-    log('build', `版本: ${version}`);
+    log('build', `渠道: ${channel}，版本: ${version}`);
 
     // 替换 URL 占位符
     const vars: Record<string, string> = {
-        release_tag: releaseTag,
+        release_tag: channel,
         display_name: displayName,
         version: version,
     };
@@ -202,19 +261,13 @@ async function main() {
     });
 
     if (result.outputFiles && result.outputFiles.length > 0) {
-        let out = result.outputFiles[0].text
-            .replace(/\r\n?|\n/g, '\r\n')
-            .replace(/ \/\* .*? \*\//g, '')
-            .replace(/\/\*\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/ (?![@=]).*$/gm, '')
-            .replace(/\r\n?|\n/g, '\r\n')
-            .replace(/^\s*$/gm, '');
-        await promises.writeFile(distUncompressPath, out);
+        await promises.writeFile(distUncompressPath, cleanUnminifiedOutput(result.outputFiles[0].text));
     } else {
         error('build', `构建失败：${result.errors}`);
         process.exit(1);
     }
 
+    logArtifacts();
     success('build', '构建完成');
 }
 
