@@ -144,6 +144,8 @@
     "following": "已关注",
     "downloaded": "已下载",
     "parsingProgress": "解析进度: ",
+    "taskInProgress": "解析任务进行中，请稍候…",
+    "waitingForLock": "正在等待其他页面的任务完成…",
     "manualDownloadTips": "单独下载请直接在此处输入视频ID, 批量下载请提供使用“|”分割的视频ID, 例如: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "没有可供下载的视频源",
     "videoSourceNotAvailable": "视频源地址不可用",

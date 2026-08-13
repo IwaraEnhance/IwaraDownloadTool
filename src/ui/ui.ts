@@ -1,10 +1,10 @@
 import { Config, config } from "../core/config";
 import { db } from "../core/db";
 import { DownloadType, PageType, ToastType } from "../core/enum";
-import { isNullOrUndefined, delay, stringify } from "../core/env";
+import { isNullOrUndefined, delay, stringify, UUID } from "../core/env";
 import { renderNode, unlimitedFetch } from "../core/extension";
 import { check } from "../network/envCheck";
-import { getAuth, refreshToken } from "../network/auth";
+import { getAuth, isLoggedIn, refreshToken, verifyLogin } from "../network/auth";
 import { newToast, toastNode } from "./notify";
 import { parseVideoInfo } from "../network/video";
 import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from "../download/downloadQueue";
@@ -12,15 +12,20 @@ import { importConfig } from "./configUi";
 import { syncCachedToMediaCenter } from "../network/mediaCenter";
 import { originalNodeAppendChild, originalAddEventListener } from "../core/hijack";
 import { createLogger } from "../core/log";
+import { GMLock, GMLockTTL } from "../core/gmLock";
 import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_VERSION } from "../core/constants";
 import { i18nList, type Language } from "../i18n";
-import { apiEndpoint, editConfig, getPageType, isLoggedIn, pageSelectButtons, rating, selectList } from "../main";
+import { apiEndpoint, editConfig, getPageType, pageSelectButtons, rating, selectList } from "../main";
 import site from "../data/site.json";
 
 const log = createLogger('UI');
 
 /** 一个月的毫秒数（计算值，JSON 只能存字面量无法表达，故保留在 TS） */
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
+
+/** 订阅页遍历跨页互斥锁（防止多个标签页同时遍历订阅页） */
+const PARSE_UNLISTED_LOCK = 'parseUnlistedAndPrivate'
+const parseUnlistedLock = new GMLock(UUID())
 
 export function uninjectCheckbox(element: Element | Node) {
     if (element instanceof HTMLElement) {
@@ -637,6 +642,8 @@ export class menu {
     interface!: HTMLDivElement;
     interfacePage!: HTMLUListElement;
     isTouchDevice!: boolean;
+    /** 页面遍历（parseUnlistedAndPrivate）防重入标志 */
+    private parseRunning = false
     constructor() {
         let body = new Proxy(this, {
             set: (target, prop, value) => {
@@ -762,60 +769,72 @@ export class menu {
     }
 
     public async parseUnlistedAndPrivate() {
-        if (!isLoggedIn()) return
-        const lastMonthTimestamp = Date.now() - MONTH_MS
-        const thisMonthUnlistedAndPrivateVideos = await db.getFilteredVideos(lastMonthTimestamp, Infinity);
-        let parseUnlistedAndPrivateVideos: VideoInfo[] = []
+        // 防重入：pageChange 频繁触发时避免并发启动多个遍历
+        if (this.parseRunning) return
+        this.parseRunning = true
+        try {
+            // 防多页面重入：其他页面正在遍历时静默让位（心跳由 GMLock 内部维护）
+            if (!parseUnlistedLock.acquireWithHeartbeat(PARSE_UNLISTED_LOCK, GMLockTTL.BatchTaskSlow)) return
+            if (!await verifyLogin()) return
+            const lastMonthTimestamp = Date.now() - MONTH_MS
+            const thisMonthUnlistedAndPrivateVideos = await db.getFilteredVideos(lastMonthTimestamp, Infinity);
+            let parseUnlistedAndPrivateVideos: VideoInfo[] = []
 
-        const MAX_FIND_PAGES = site.maxFindPages;
-        let pageCount = 0;
-        log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
+            const MAX_FIND_PAGES = site.maxFindPages;
+            let pageCount = 0;
+            log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
 
-        while (pageCount < MAX_FIND_PAGES) {
-            log.debug(`Fetching page ${pageCount}.`);
-            const response = await unlimitedFetch(
-                `https://${apiEndpoint}/videos?subscribed=true&limit=${site.pageLimit}&rating=${rating()}&page=${pageCount}`,
-                { method: 'GET', headers: await getAuth() },
-                {
-                    retry: true,
-                    retryDelay: 1000,
-                    onRetry: async () => { await refreshToken() }
+            while (pageCount < MAX_FIND_PAGES) {
+                // 心跳由 GMLock 内部维护：循环内仅复核持有状态，失去锁立即让位
+                if (!parseUnlistedLock.isHeld(PARSE_UNLISTED_LOCK)) return
+                log.debug(`Fetching page ${pageCount}.`);
+                const response = await unlimitedFetch(
+                    `https://${apiEndpoint}/videos?subscribed=true&limit=${site.pageLimit}&rating=${rating()}&page=${pageCount}`,
+                    { method: 'GET', headers: await getAuth() },
+                    {
+                        retry: true,
+                        retryDelay: 1000,
+                        onRetry: async () => { await refreshToken() }
+                    }
+                );
+                log.debug('Received response, parsing JSON.');
+                const data = (await response.json() as Iwara.IPage).results as Iwara.Video[];
+                log.debug(`Page ${pageCount} returned ${data.length} videos.`);
+                data.forEach(info => info.user.following = true);
+                const videoPromises = data.map(info => parseVideoInfo({
+                    Type: 'cache',
+                    ID: info.id,
+                    RAW: info
+                }));
+                log.debug('Initializing VideoInfo promises.');
+                const videoInfos = await Promise.all(videoPromises);
+                parseUnlistedAndPrivateVideos.push(...videoInfos);
+                let test = videoInfos.filter(i => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
+                log.debug('All VideoInfo objects initialized.');
+                if (test && thisMonthUnlistedAndPrivateVideos.intersect(videoInfos, 'ID').any()) {
+                    log.debug(`Found private video on page ${pageCount}.`);
+                    break;
                 }
-            );
-            log.debug('Received response, parsing JSON.');
-            const data = (await response.json() as Iwara.IPage).results as Iwara.Video[];
-            log.debug(`Page ${pageCount} returned ${data.length} videos.`);
-            data.forEach(info => info.user.following = true);
-            const videoPromises = data.map(info => parseVideoInfo({
-                Type: 'cache',
-                ID: info.id,
-                RAW: info
-            }));
-            log.debug('Initializing VideoInfo promises.');
-            const videoInfos = await Promise.all(videoPromises);
-            parseUnlistedAndPrivateVideos.push(...videoInfos);
-            let test = videoInfos.filter(i => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
-            log.debug('All VideoInfo objects initialized.');
-            if (test && thisMonthUnlistedAndPrivateVideos.intersect(videoInfos, 'ID').any()) {
-                log.debug(`Found private video on page ${pageCount}.`);
-                break;
-            }
-            log.debug(`Latest private video not found on page ${pageCount}, continuing.`);
-            pageCount++;
+                log.debug(`Latest private video not found on page ${pageCount}, continuing.`);
+                pageCount++;
 
-            log.debug(`Incremented page to ${pageCount}, delaying next fetch.`);
-            await delay(100);
-        }
-        log.debug('Fetch loop ended. Start updating the database');
-        const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map(v => v.ID));
-        const toUpdate = parseUnlistedAndPrivateVideos.difference(
-            existingVideos.filter(v => v.Type === 'full'), 'ID')
-        if (toUpdate.any()) {
-            log.debug(`Need to update ${toUpdate.length} pieces of data.`);
-            await db.bulkPutVideos(toUpdate)
-            log.debug(`Update Completed.`);
-        } else {
-            log.debug(`No need to update data.`);
+                log.debug(`Incremented page to ${pageCount}, delaying next fetch.`);
+                await delay(100);
+            }
+            log.debug('Fetch loop ended. Start updating the database');
+            const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map(v => v.ID));
+            const toUpdate = parseUnlistedAndPrivateVideos.difference(
+                existingVideos.filter(v => v.Type === 'full'), 'ID')
+            if (toUpdate.any()) {
+                log.debug(`Need to update ${toUpdate.length} pieces of data.`);
+                await db.bulkPutVideos(toUpdate)
+                log.debug(`Update Completed.`);
+            } else {
+                log.debug(`No need to update data.`);
+            }
+        } finally {
+            parseUnlistedLock.release(PARSE_UNLISTED_LOCK)
+            this.parseRunning = false
         }
     }
 
@@ -900,9 +919,8 @@ export class menu {
 
         let downloadThisButton = this.button('downloadThis', async (name, event) => {
             let ID = unsafeWindow.location.href.toURL().pathname.split('/')[2]
-            await pushDownloadTask(await parseVideoInfo({
-                Type: 'init', ID
-            }))
+            // 直接传 init：由 pushDownloadTask 顶层同 ID 锁防连点重复推送（解析也一并纳入锁内）
+            await pushDownloadTask({ Type: 'init', ID })
         })
 
         switch (this.pageType) {

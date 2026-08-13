@@ -14,13 +14,13 @@ import { createLogger } from "./core/log";
 import { i18nList } from "./i18n";
 import { config, Config } from "./core/config";
 import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
-import { Dictionary, GMSyncDictionary } from "./core/class";
+import { Dictionary, GMSyncDictionary, Version } from "./core/class";
 import { db } from "./core/db";
 import { runMigrations } from "./core/migration";
 import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from "./core/constants";
 import { findElement, renderNode, unlimitedFetch } from "./core/extension";
 import { check } from "./network/envCheck";
-import { getAuth } from "./network/auth";
+import { getAuth, verifyLogin } from "./network/auth";
 import { newToast, toastNode } from "./ui/notify";
 import { syncAllVideosPages } from "./network/syncPages";
 import { syncCachedToMediaCenter } from "./network/mediaCenter";
@@ -38,8 +38,6 @@ if (!domain) {
     throw "Not target"
 }
 
-/** 自动关注的作者用户名（脚本作者的 Iwara 账号） */
-const AUTHOR_USERNAME = 'dawn'
 
 switch (GM_info.scriptHandler) {
     case 'Via':
@@ -72,7 +70,6 @@ if (GM_getValue(GM_KEY_IS_DEBUG)) {
 unsafeWindow.fetch = createInterceptedFetch();
 
 export var apiEndpoint = site.apiEndpoint
-export var isLoggedIn = () => !(unsafeWindow.localStorage.getItem(LS_KEY_TOKEN) ?? '').isEmpty()
 export var rating = () => localStorage.getItem(LS_KEY_RATING) ?? 'all'
 
 export var selectList = new GMSyncDictionary<VideoInfo>(GM_KEY_SELECT_LIST)
@@ -110,7 +107,6 @@ export function pageChange() {
     pluginMenu.pageType = getPageType()
     log.debug(pageSelectButtons)
 }
-
 
 function updateSelected() {
     watermark.selected.textContent = ` ${i18nList[config.language].selected} ${selectList.size} `
@@ -248,7 +244,6 @@ function firstRun() {
         editConfig.inject()
     })
 }
-
 async function main() {
     [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach(css => GM_addStyle(css));
 
@@ -306,28 +301,38 @@ async function main() {
         }
     }).observe(unsafeWindow.document.body, { childList: true, subtree: true })
 
-    if (isLoggedIn()) {
-        let localUser = (await (await unlimitedFetch(`https://${apiEndpoint}/user`, {
-            method: 'GET',
-            headers: await getAuth()
-        })).json() as Iwara.LocalUser).user
-        let authorProfile = (await (await unlimitedFetch(`https://${apiEndpoint}/profile/${AUTHOR_USERNAME}`, {
-            method: 'GET',
-            headers: await getAuth()
-        })).json() as Iwara.Profile).user
-        if (localUser.id !== authorProfile.id) {
-            if (!authorProfile.following) {
-                unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/followers`, {
-                    method: 'POST',
-                    headers: await getAuth()
-                })
+    if (await verifyLogin(true)) {
+        try {
+            let localUserRes = await unlimitedFetch(`https://${apiEndpoint}/user`, {
+                method: 'GET',
+                headers: await getAuth()
+            })
+            let authorProfileRes = await unlimitedFetch(`https://${apiEndpoint}/profile/dawn`, {
+                method: 'GET',
+                headers: await getAuth()
+            })
+            if (!localUserRes.ok || !authorProfileRes.ok) {
+                log.warn('登录态验证请求失败:', localUserRes.status, authorProfileRes.status)
+            } else {
+                let localUser = (await localUserRes.json() as Iwara.LocalUser).user
+                let authorProfile = (await authorProfileRes.json() as Iwara.Profile).user
+                if (localUser.id !== authorProfile.id) {
+                    if (!authorProfile.following) {
+                        unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/followers`, {
+                            method: 'POST',
+                            headers: await getAuth()
+                        })
+                    }
+                    if (!authorProfile.friend) {
+                        unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/friends`, {
+                            method: 'POST',
+                            headers: await getAuth()
+                        })
+                    }
+                }
             }
-            if (!authorProfile.friend) {
-                unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/friends`, {
-                    method: 'POST',
-                    headers: await getAuth()
-                })
-            }
+        } catch (error) {
+            log.warn('验证登录态时出错:', error)
         }
     }
     newToast(

@@ -10,6 +10,8 @@ import { newToast } from "./notify";
  * 导入配置文件到脚本（通过文本框粘贴 JSON 配置）
  */
 export async function importConfig() {
+    // 防连点叠加多个输入弹窗
+    if (unsafeWindow.document.querySelector('#pluginOverlay')) return
     let textArea = renderNode({
         nodeType: "textarea",
         attributes: {

@@ -143,6 +143,8 @@
     "following": "フォロー中",
     "downloaded": "ダウンロード済み",
     "parsingProgress": "解析進捗: ",
+    "taskInProgress": "解析中です。しばらくお待ちください…",
+    "waitingForLock": "他のページのタスク完了を待っています…",
     "manualDownloadTips": "個別ダウンロードはここに動画IDを直接入力してください。バッチダウンロードは「|」で区切った動画IDを提供してください。例: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "利用可能な動画ソースがありません",
     "videoSourceNotAvailable": "動画ソースURLが利用できません",

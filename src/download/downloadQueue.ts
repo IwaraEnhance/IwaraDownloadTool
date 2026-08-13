@@ -1,5 +1,6 @@
 import "../core/env";
-import { delay, isNullOrUndefined, prune, stringify } from "../core/env";
+import { delay, isNullOrUndefined, prune, stringify, UUID } from "../core/env";
+import { GMLock, GMLockTTL } from "../core/gmLock";
 import { i18nList } from "../i18n";
 import { DownloadType, PageType, ToastType } from "../core/enum";
 import { config } from "../core/config";
@@ -19,6 +20,8 @@ import { browserDownload, browserDownloadMetadata, iwaradlDownload, othersDownlo
 import { apiEndpoint, domain, pluginMenu, selectList } from "../main";
 
 export async function addDownloadTask() {
+    // 防连点叠加多个输入弹窗
+    if (unsafeWindow.document.querySelector('#pluginOverlay')) return
     let textArea = renderNode({
         nodeType: "textarea",
         attributes: {
@@ -147,57 +150,130 @@ async function downloadTaskUnique(taskList: Dictionary<VideoInfo>) {
     }
 }
 
+/** 解析下载任务防重入标志（循环内每视频有间隔，连点会并发运行多个解析循环） */
+let analyzeDownloadTaskRunning = false
+/** 批量解析下载跨页互斥锁（selectList 跨页同步，多标签页同时批量下载会重复推送任务） */
+const ANALYZE_DOWNLOAD_LOCK = 'analyzeDownloadTask'
+const analyzeDownloadLock = new GMLock(UUID())
+
 export async function analyzeDownloadTask(taskList: Dictionary<VideoInfo> = selectList) {
-    let size = taskList.size
-    let node = renderNode({
-        nodeType: 'p',
-        childs: `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
-    })
-
-    let parsingProgressToast = newToast(ToastType.Info, {
-        node: node,
-        duration: -1
-    })
-
-    function updateParsingProgress() {
-        node.firstChild!.textContent = `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
+    if (analyzeDownloadTaskRunning) {
+        newToast(ToastType.Warn, {
+            text: `%#taskInProgress#%`,
+            duration: 3000,
+            close: true,
+            onClick() { this.hide() }
+        }).show()
+        return
     }
-
-    parsingProgressToast.show()
-    if (config.experimentalFeatures && config.downloadType === DownloadType.Aria2) {
-        await downloadTaskUnique(taskList)
-        updateParsingProgress()
-    }
-
-    for (let [id, info] of taskList) {
-        await pushDownloadTask(await parseVideoInfo(info))
-        taskList.delete(id)
-        updateParsingProgress()
-        !config.enableUnsafeMode && await delay(3000)
-    }
-
-    parsingProgressToast.hide()
-    newToast(
-        ToastType.Info,
-        {
-            text: `%#allCompleted#%`,
+    // 跨页互斥：选中列表跨页同步，另一页面正在批量下载时等待其完成（无延迟接管，心跳由锁内部维护）
+    if (!analyzeDownloadLock.acquireWithHeartbeat(ANALYZE_DOWNLOAD_LOCK, GMLockTTL.BatchTask)) {
+        let waitingToast = newToast(ToastType.Info, {
+            text: `%#waitingForLock#%`,
             duration: -1,
             close: true,
-            onClick() {
-                this.hide()
-            }
+            onClick() { this.hide() }
+        })
+        waitingToast.show()
+        if (!await analyzeDownloadLock.acquireWaitWithHeartbeat(ANALYZE_DOWNLOAD_LOCK, GMLockTTL.BatchTask)) {
+            waitingToast.hide()
+            return
         }
-    ).show()
+        waitingToast.hide()
+    }
+    analyzeDownloadTaskRunning = true
+    try {
+        let size = taskList.size
+        let node = renderNode({
+            nodeType: 'p',
+            childs: `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
+        })
+
+        let parsingProgressToast = newToast(ToastType.Info, {
+            node: node,
+            duration: -1
+        })
+
+        function updateParsingProgress() {
+            node.firstChild!.textContent = `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
+        }
+
+        parsingProgressToast.show()
+        if (config.experimentalFeatures && config.downloadType === DownloadType.Aria2) {
+            await downloadTaskUnique(taskList)
+            updateParsingProgress()
+        }
+
+        for (let [id, info] of taskList) {
+            // 心跳由 GMLock 内部维护：循环内仅复核持有状态，失去锁立即让位
+            if (!analyzeDownloadLock.isHeld(ANALYZE_DOWNLOAD_LOCK)) {
+                parsingProgressToast.hide()
+                newToast(ToastType.Warn, {
+                    text: `%#taskInProgress#%`,
+                    duration: 3000,
+                    close: true,
+                    onClick() { this.hide() }
+                }).show()
+                return
+            }
+            await pushDownloadTask(await parseVideoInfo(info))
+            taskList.delete(id)
+            updateParsingProgress()
+            !config.enableUnsafeMode && await delay(3000)
+        }
+
+        parsingProgressToast.hide()
+        newToast(
+            ToastType.Info,
+            {
+                text: `%#allCompleted#%`,
+                duration: -1,
+                close: true,
+                onClick() {
+                    this.hide()
+                }
+            }
+        ).show()
+    } finally {
+        analyzeDownloadTaskRunning = false
+        analyzeDownloadLock.release(ANALYZE_DOWNLOAD_LOCK)
+    }
 }
 
-export async function pushDownloadTask(videoInfo: VideoInfo) {
+/** 同一视频 ID 的下载推送进行中集合（单页防重入，连点跳过） */
+const pushingVideoIds = new Set<string>()
+/** 下载推送跨页互斥锁（多标签页同时推送同一视频时仅一个页面执行） */
+const PUSH_LOCK_PREFIX = 'pushDownloadTask:'
+const pushLock = new GMLock(UUID())
+
+/** 推送下载任务（顶层入口，单页 + 跨页同 ID 防重入：进行中再次推送会被跳过） */
+export async function pushDownloadTask(videoInfo: VideoInfo): Promise<void> {
+    if (pushingVideoIds.has(videoInfo.ID)) {
+        log.debug(`Skip duplicate push: ${videoInfo.ID}`)
+        return
+    }
+    const lockName = `${PUSH_LOCK_PREFIX}${videoInfo.ID}`
+    if (!pushLock.acquire(lockName, GMLockTTL.ShortTask)) {
+        log.debug(`Skip duplicate push (another page): ${videoInfo.ID}`)
+        return
+    }
+    pushingVideoIds.add(videoInfo.ID)
+    try {
+        await pushDownloadTaskInner(videoInfo)
+    } finally {
+        pushingVideoIds.delete(videoInfo.ID)
+        pushLock.release(lockName)
+    }
+}
+
+async function pushDownloadTaskInner(videoInfo: VideoInfo) {
     switch (videoInfo.Type) {
         case "partial":
             const partialCache = await db.getVideoById(videoInfo.ID)
             if (!isNullOrUndefined(partialCache) && partialCache.Type !== 'full') await db.putVideo(videoInfo)
         case "cache":
         case "init":
-            return await pushDownloadTask(await parseVideoInfo(videoInfo))
+            return await pushDownloadTaskInner(await parseVideoInfo(videoInfo))
         case "fail":
             const cache = await db.getVideoById(videoInfo.ID)
             newToast(

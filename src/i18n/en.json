@@ -143,6 +143,8 @@
     "following": "Following",
     "downloaded": "Downloaded",
     "parsingProgress": "Parsing Progress: ",
+    "taskInProgress": "Parsing in progress, please wait...",
+    "waitingForLock": "Waiting for another page's task to finish...",
     "manualDownloadTips": "For individual downloads, input the video ID here. For batch downloads, separate video IDs with \"|\". Example: AeGUIRO2D5vQ6F|qQsUMJa19LcK3L",
     "noAvailableVideoSource": "No available video sources",
     "videoSourceNotAvailable": "Video source URL unavailable",

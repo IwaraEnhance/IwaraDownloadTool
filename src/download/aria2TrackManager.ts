@@ -3,7 +3,7 @@ import { GMSyncDictionary } from "../core/class";
 import { DownloadType, ToastType } from "../core/enum";
 import { config } from "../core/config";
 import { db } from "../core/db";
-import { GMLock } from "../core/gmLock";
+import { GMLock, GMLockTTL } from "../core/gmLock";
 import { originalAddEventListener } from "../core/hijack";
 import { createLogger } from "../core/log";
 import { unlimitedFetch } from "../core/extension";
@@ -28,9 +28,6 @@ const mediaLog = createLogger('MediaCenter');
 const ARIA2_TRACK_QUEUE_KEY = 'Aria2TrackQueue';
 /** 管理器全局锁名：跨页面仅此一把锁，持有者负责处理整个队列 */
 const ARIA2_TRACK_MANAGER_LOCK = 'aria2TrackManager';
-/** 管理器租约时长（毫秒）：持有页面关闭/崩溃后其他页面可重新选举接管。
- *  不低于后台标签页定时器节流上限（约 60s）+ 余量，避免被节流时误判过期导致频繁重选 */
-const ARIA2_TRACK_MANAGER_TTL = 75_000;
 /** 管理器选举间隔（毫秒）：非管理器页面周期尝试抢占单把锁 */
 const ARIA2_TRACK_ELECTION_INTERVAL = 4000;
 /** 任务队列扫描间隔（毫秒）：把 aria2 中尚未纳入队列的任务补入队列 */
@@ -215,6 +212,8 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                             if (!newRes?.result?.isEmpty()) {
                                 currentGid = newRes.result;
                                 updateAria2TrackTaskGid(task.videoId, currentGid);
+                                // 重建 = 新连接：重置豁免计数，慢启动期重新豁免
+                                activePollCount = 0;
                                 log.debug(`${task.videoId} 任务重建成功，新 gid=${currentGid}`);
                                 trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestart');
                             }
@@ -234,6 +233,9 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                                 const freshActive = await restartAria2Task(currentGid, task.videoId, status);
                                 if (freshActive) {
                                     videoInfo = freshActive;
+                                    // 重启 = 新连接：重置豁免计数，慢启动期重新豁免，
+                                    // 避免刚重启的任务因慢启动速度低被连续误判重启（无限重启循环）
+                                    activePollCount = 0;
                                     trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartSlow');
                                 }
                             }
@@ -256,6 +258,8 @@ async function processAria2TrackTask(task: Aria2TrackTask): Promise<void> {
                         const freshPaused = await restartAria2Task(currentGid, task.videoId, status);
                         if (freshPaused) {
                             videoInfo = freshPaused;
+                            // 重启 = 新连接：重置豁免计数，慢启动期重新豁免
+                            activePollCount = 0;
                             trackStatusToast(task.videoId, videoInfo.Title, ToastType.Warn, 'aria2TrackRestartPaused');
                         }
                     }
@@ -297,7 +301,8 @@ async function tryBecomeAria2TrackManager(): Promise<void> {
     if (aria2TrackManagerLoopRunning) return;
     aria2TrackManagerLoopRunning = true; // 同步置位，防止并发重复启动管理循环
     try {
-        if (!aria2TrackLock.acquire(ARIA2_TRACK_MANAGER_LOCK, ARIA2_TRACK_MANAGER_TTL)) return;
+        // 接管后由 GMLock 内部心跳自动续期（默认 TTL/3），失去锁时主循环通过 isHeld 退出
+        if (!aria2TrackLock.acquireWithHeartbeat(ARIA2_TRACK_MANAGER_LOCK, GMLockTTL.DaemonTask)) return;
         log.debug('本页成为管理器，接管整个队列');
         await startAria2TrackManagerLoop();
     } finally {
@@ -305,11 +310,11 @@ async function tryBecomeAria2TrackManager(): Promise<void> {
     }
 }
 
-/** 管理器主循环：心跳续期 + 同步队列 worker */
+/** 管理器主循环：同步队列 worker（锁心跳由 GMLock 内部维护，循环仅复核持有状态） */
 async function startAria2TrackManagerLoop(): Promise<void> {
     syncAria2TrackWorkers();
-    while (aria2TrackLock.renew(ARIA2_TRACK_MANAGER_LOCK, ARIA2_TRACK_MANAGER_TTL)) {
-        await delay(ARIA2_TRACK_MANAGER_TTL / 3);
+    while (aria2TrackLock.isHeld(ARIA2_TRACK_MANAGER_LOCK)) {
+        await delay(GMLockTTL.DaemonTask / 3);
         syncAria2TrackWorkers();
     }
     // 失去管理器资格：worker 会在下一轮通过 isHeld() 自行退出
