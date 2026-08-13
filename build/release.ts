@@ -131,8 +131,9 @@ const RELEASE_FILES = ['package.json', 'package-lock.json', 'src/i18n.ts'];
  * - 暂存区必须只含发布文件（否则说明有人手动 git add，会混入发布提交）
  */
 function verifyReleaseIntegrity(baseCommit: string): void {
+    // baseCommit 可能为短哈希（rev-parse --short），统一解析为完整哈希再比较，避免误报
     const head = exec('git rev-parse HEAD');
-    if (head !== baseCommit) {
+    if (head !== exec(`git rev-parse ${baseCommit}`)) {
         throw new Error(`检测到发布过程中的手动提交（HEAD 已从基线 ${baseCommit} 变为 ${head}），发布中止`);
     }
     const staged = exec('git diff --cached --name-only').split('\n').filter(Boolean);
@@ -247,7 +248,7 @@ function main(): void {
             // 仅当 HEAD 仍在发布基线时才能安全撤销发布流程的本地更改；
             // 若有人手动提交（HEAD 已变），绝不自动回滚，避免误删其提交
             const head = exec('git rev-parse HEAD');
-            if (head === backupCommit) {
+            if (head === exec(`git rev-parse ${backupCommit}`)) {
                 log(TAG, `撤销发布流程的本地更改（基线 ${backupCommit}）...`);
                 try {
                     run('git reset', { tag: TAG, silent: true });
