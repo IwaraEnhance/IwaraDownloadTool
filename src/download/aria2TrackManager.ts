@@ -53,7 +53,7 @@ function aria2TrackPollInterval(status?: string): number {
 export const ARIA2_SLOW_SPEED_THRESHOLD = 64 * 1024;
 /** 慢启动豁免轮询次数：任务进入 active 后的前 N 次轮询不因“速度过慢”重启——
  * TCP 慢启动阶段速度低是正常的（每次新建连接都会重新慢启动），等它提速后再判定 */
-const ARIA2_TRACK_SLOW_START_EXEMPT_POLLS = 8;
+const ARIA2_TRACK_SLOW_START_EXEMPT_POLLS = 16;
 /** 当前页面实例唯一的标识 */
 const aria2TrackOwner = UUID();
 /** 跨页面原子锁：全局仅此一把，用于选举唯一的管理页面 */
@@ -465,7 +465,7 @@ export async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId:
                     return false;
                 }
                 if (!createResult.id || createResult.id.isEmpty()) {
-                    mediaLog.warn(`createMedia returned no id for ${videoInfo.ID}`);
+                    mediaLog.warn(`createMedia returned no id for ${videoInfo.ID} ${stringify(createResult)}`);
                     return false;
                 }
 
@@ -481,7 +481,8 @@ export async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId:
             title: videoInfo.Title,
             description: videoInfo.Description ?? '',
             source: 'iwara',
-            author: videoInfo.Author || videoInfo.Alias,
+            author: videoInfo.Author,
+            altNames: videoInfo.Alias.isEmpty() ? undefined : [videoInfo.Alias],
             tags: (videoInfo.Tags ?? []).map(t => t.id),
             duration: videoInfo.RAW?.file?.duration,
             sourceMeta: videoInfo.RAW ? JSON.stringify(videoInfo.RAW) : undefined,
