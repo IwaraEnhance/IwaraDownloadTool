@@ -1,14 +1,14 @@
-import "../core/env";
-import { isNullOrUndefined, prune, stringify, UUID } from "../core/env";
-import { ToastType } from "../core/enum";
-import { config } from "../core/config";
-import { unlimitedFetch } from "../core/extension";
-import { createLogger } from "../core/log";
-import { newToast, toastNode } from "../ui/notify";
-import { analyzeLocalPath, getDownloadPath } from "./downloadPath";
-import { buildDownloadUrl, enqueueAria2TrackTask } from "./aria2TrackManager";
+import '../core/env'
+import { isNullOrUndefined, prune, stringify, UUID } from '../core/env'
+import { ToastType } from '../core/enum'
+import { config } from '../core/config'
+import { unlimitedFetch } from '../core/extension'
+import { createLogger } from '../core/log'
+import { newToast, toastNode } from '../ui/notify'
+import { analyzeLocalPath, getDownloadPath } from './downloadPath'
+import { buildDownloadUrl, enqueueAria2TrackTask } from './aria2TrackManager'
 
-const log = createLogger('Aria2');
+const log = createLogger('Aria2')
 
 /**
  * 调用Aria2 RPC API
@@ -18,22 +18,24 @@ const log = createLogger('Aria2');
  * @returns {Promise<Aria2.IResult>} 返回API调用结果
  */
 export async function aria2API(method: string, params: any): Promise<Aria2.IResult> {
-    return await (await unlimitedFetch(
-        config.aria2Path,
-        {
+    return await (
+        await unlimitedFetch(config.aria2Path, {
             headers: {
-                'accept': 'application/json',
+                accept: 'application/json',
                 'content-type': 'application/json'
             },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                method: method,
-                id: UUID(),
-                params: [`token:${config.aria2Token}`, ...params]
-            }, (_, v) => typeof v === 'boolean' ? String(v) : v),
+            body: JSON.stringify(
+                {
+                    jsonrpc: '2.0',
+                    method: method,
+                    id: UUID(),
+                    params: [`token:${config.aria2Token}`, ...params]
+                },
+                (_, v) => (typeof v === 'boolean' ? String(v) : v)
+            ),
             method: 'POST'
-        }
-    )).json()
+        })
+    ).json()
 }
 
 /**
@@ -69,41 +71,31 @@ export function aria2TaskExtractVideoID(task: Aria2.Status): string | undefined 
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean | undefined = undefined) {
-    const downloadUrl = buildDownloadUrl(videoInfo);
-    const localPath = getDownloadPath(videoInfo);
+    const downloadUrl = buildDownloadUrl(videoInfo)
+    const localPath = getDownloadPath(videoInfo)
     const downloadParams = prune({
         'allow-overwrite': true,
         'all-proxy': config.downloadProxy,
         'all-proxy-passwd': !config.downloadProxy.isEmpty() ? config.downloadProxyPassword : undefined,
         'all-proxy-user': !config.downloadProxy.isEmpty() ? config.downloadProxyUsername : undefined,
-        'out': localPath.fullName,
-        'dir': localPath.directory,
-        'referer': window.location.hostname,
-        'header': [
-            'Cookie:' + unsafeWindow.document.cookie
-        ]
+        out: localPath.fullName,
+        dir: localPath.directory,
+        referer: window.location.hostname,
+        header: ['Cookie:' + unsafeWindow.document.cookie]
     })
     try {
-        let res = await aria2API('aria2.addUri', [[downloadUrl.href], downloadParams]) as Aria2.AuctionResult
+        let res = (await aria2API('aria2.addUri', [[downloadUrl.href], downloadParams])) as Aria2.AuctionResult
         if (res.result.isEmpty()) throw `aria2 下载失败：${stringify(res)}`
-        newToast(
-            ToastType.Info,
-            {
-                gravity: 'bottom',
-                node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
-            }
-        ).show()
+        newToast(ToastType.Info, {
+            gravity: 'bottom',
+            node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
+        }).show()
         // 加入跨页面同步队列，由唯一的“管理器”页面负责后续追踪
-        enqueueAria2TrackTask(videoInfo.ID, res.result, downloadParams);
+        enqueueAria2TrackTask(videoInfo.ID, res.result, downloadParams)
     } catch (error) {
-        newToast(
-            ToastType.Info,
-            {
-                gravity: 'bottom',
-                node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFail#%`)
-            }
-        ).show()
+        newToast(ToastType.Info, {
+            gravity: 'bottom',
+            node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFail#%`)
+        }).show()
     }
 }
-
-

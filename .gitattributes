@@ -1,0 +1,19 @@
+# 统一行尾：仓库内存储 LF，检出统一为 CRLF（Windows 格式）
+# 配合 .prettierrc 的 endOfLine: crlf，保证在 Windows 与类 Unix 上行为一致
+* text=auto eol=crlf
+
+# .mata 是 Tampermonkey 用户脚本元数据模板（内容为 JS 注释风格），
+# 让 GitHub Linguist 按 JavaScript 识别：语法高亮 + 语言统计
+*.mata linguist-language=JavaScript
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

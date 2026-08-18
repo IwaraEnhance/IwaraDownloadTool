@@ -1,4 +1,4 @@
-import { PageType } from "./enum";
+import { PageType } from './enum'
 
 /** 路径段模式：`:name` 匹配任意单段；`:name?` 为可选尾段（可省略）。与前端 React Router v3 的 path 一致 */
 export type PathPattern = readonly string[]
@@ -67,7 +67,7 @@ export const PAGE_TYPE_ROUTES: ReadonlyArray<readonly [PathPattern, PageType]> =
     // ── 用户私信（动态首段，兜底放最后）──
     [[':userId', 'messages', ':conversationId?'], PageType.Messages], // /:userId/messages[/:id]
     // ── 首页 ──
-    [[], PageType.Home], // /（空路径）
+    [[], PageType.Home] // /（空路径）
 ]
 
 /** 匹配路径段与模式：支持 `:name` 参数段与尾随可选段 `:name?`（纯字符串比较，无正则） */

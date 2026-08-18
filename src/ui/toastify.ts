@@ -1,11 +1,11 @@
-import { Dictionary } from "../core/dictionary";
-import { debounce, isNullOrUndefined, UUID } from "../core/env";
-export type Gravity = 'top' | 'bottom';
-export type Position = 'left' | 'center' | 'right';
-export type CloseReason = 'timeout' | 'close-button' | 'other';
-export const activeToasts = new Dictionary<Toast>();
-const toastTimeouts = new Map<Toast, number>();
-const toastContainers = new Map<string, HTMLElement>();
+import { Dictionary } from '../core/dictionary'
+import { debounce, isNullOrUndefined, UUID } from '../core/env'
+export type Gravity = 'top' | 'bottom'
+export type Position = 'left' | 'center' | 'right'
+export type CloseReason = 'timeout' | 'close-button' | 'other'
+export const activeToasts = new Dictionary<Toast>()
+const toastTimeouts = new Map<Toast, number>()
+const toastContainers = new Map<string, HTMLElement>()
 const offscreenContainer = document.createElement('div')
 offscreenContainer.classList.add('offscreen-container')
 const camelToKebab = (str: string): string => str.replace(/([A-Z])/g, '-$1').toLowerCase()
@@ -17,11 +17,7 @@ const getContainer = (gravity: Gravity, position: Position): HTMLElement => {
     if (isNullOrUndefined(container)) {
         container = document.createElement('div')
         container.id = containerId
-        container.classList.add(
-            'toast-container',
-            `toast-${gravity}`,
-            `toast-${position}`
-        )
+        container.classList.add('toast-container', `toast-${gravity}`, `toast-${position}`)
         document.body.appendChild(container)
         toastContainers.set(containerId, container)
     }
@@ -147,30 +143,20 @@ export class Toast {
         this.oldestFirst = this.options.oldestFirst
         // showProgress 未显式指定时，仅在「会自动隐藏且持续时间足够长」的 toast 上显示进度条
         // 显式传 true/false 可覆盖此自动判定
-        this.showProgress = options.showProgress ?? (
-            !isNullOrUndefined(this.options.duration)
-            && this.options.duration > 0
-            && this.options.duration >= MIN_PROGRESS_DURATION
-        )
+        this.showProgress = options.showProgress ?? (!isNullOrUndefined(this.options.duration) && this.options.duration > 0 && this.options.duration >= MIN_PROGRESS_DURATION)
         this.element = document.createElement('div')
         // rate: 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的过渡时长
         if (this.options.rate !== 1) {
             this.element.style.setProperty('--toast-rate', String(this.options.rate))
         }
-        this.applyBaseStyles()
-            .addCloseButton()
-            .createContent()
-            .ensureCloseMethod()
-            .bindEvents()
+        this.applyBaseStyles().addCloseButton().createContent().ensureCloseMethod().bindEvents()
         activeToasts.set(this.id, this)
     }
     private applyBaseStyles(): this {
         this.element.classList.add('toast')
         if (this.options.className) {
-            const classes = Array.isArray(this.options.className)
-                ? this.options.className
-                : [this.options.className]
-            classes.forEach(cls => this.element.classList.add(cls))
+            const classes = Array.isArray(this.options.className) ? this.options.className : [this.options.className]
+            classes.forEach((cls) => this.element.classList.add(cls))
         }
         return this
     }
@@ -277,13 +263,11 @@ export class Toast {
      * @returns this Instance for method chaining
      */
     public show(): this {
-        this.setToastRect()
-            .insertToastElement()
+        this.setToastRect().insertToastElement()
         // 强制 reflow：让初始状态（opacity:0 / max-height:0）先被浏览器记录，再切换 .show 类，
         // transition 才能从初始值开始淡入（否则同帧插入+加类会直接跳到目标态，看不到淡入）
         void this.element.offsetWidth
-        this.toggleAnimationState(true)
-            .setupAutoHide()
+        this.toggleAnimationState(true).setupAutoHide()
         return this
     }
     /**
@@ -323,9 +307,12 @@ export class Toast {
             if (closed) return
             closed = true
             this.element.remove()
-            this.options.onClose?.call(this, new CustomEvent('toast-close', {
-                detail: { reason }
-            }))
+            this.options.onClose?.call(
+                this,
+                new CustomEvent('toast-close', {
+                    detail: { reason }
+                })
+            )
         }
         // 淡出由 transition 驱动（max-height 收束到 0 时结束），监听 transitionend 后移除元素
         this.animationEndHandler = (e: TransitionEvent) => {
@@ -337,13 +324,14 @@ export class Toast {
         // 兜底：transitionend 丢失（后台标签页/无高度变化/事件被抑制）时强制移除，避免元素残留
         // 时长读取计算样式的过渡时长（多值取最长）+ 300ms 余量，自适应不同淡出速度（如 toast-slow）
         const durations = getComputedStyle(this.element).transitionDuration
-        const maxMs = durations.split(',')
-            .map(s => parseFloat(s))
-            .filter(Number.isFinite)
-            .reduce((max, sec) => Math.max(max, sec), 0) * 1000
+        const maxMs =
+            durations
+                .split(',')
+                .map((s) => parseFloat(s))
+                .filter(Number.isFinite)
+                .reduce((max, sec) => Math.max(max, sec), 0) * 1000
         window.setTimeout(finalize, Math.max(maxMs, 300) + 300)
-        this.removeEventListeners()
-            .toggleAnimationState(false)
+        this.removeEventListeners().toggleAnimationState(false)
     }
     /**
      * @deprecated This function is deprecated. Use the hide() instead.
@@ -362,11 +350,14 @@ declare global {
      */
     function Toastify(options: ToastOptions): Toast
 }
-globalThis.Toast = createToast;
-globalThis.Toastify = createToast;
-(document.body ?? document.documentElement).appendChild(offscreenContainer);
-window.addEventListener('resize', debounce(() => {
-    for (const [_, toast] of activeToasts) {
-        toast.setToastRect()
-    }
-}, 100));
+globalThis.Toast = createToast
+globalThis.Toastify = createToast
+;(document.body ?? document.documentElement).appendChild(offscreenContainer)
+window.addEventListener(
+    'resize',
+    debounce(() => {
+        for (const [_, toast] of activeToasts) {
+            toast.setToastRect()
+        }
+    }, 100)
+)

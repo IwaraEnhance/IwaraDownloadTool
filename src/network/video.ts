@@ -1,32 +1,32 @@
-import "../core/env";
-import { isNullOrUndefined, stringify } from "../core/env";
-import { i18nList } from "../i18n";
-import { ToastType } from "../core/enum";
-import { config } from "../core/config";
-import { unlimitedFetch } from "../core/extension";
-import { createLogger } from "../core/log";
-import { db } from "../core/db";
-import { getAuth, refreshToken } from "./auth";
-import { newToast, toastNode } from "../ui/notify";
+import '../core/env'
+import { isNullOrUndefined, stringify } from '../core/env'
+import { i18nList } from '../i18n'
+import { ToastType } from '../core/enum'
+import { config } from '../core/config'
+import { unlimitedFetch } from '../core/extension'
+import { createLogger } from '../core/log'
+import { db } from '../core/db'
+import { getAuth, refreshToken } from './auth'
+import { newToast, toastNode } from '../ui/notify'
 
-const log = createLogger('Video');
-import { apiEndpoint } from "../main";
+const log = createLogger('Video')
+import { apiEndpoint } from '../main'
 
 async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage> {
-    return await (await unlimitedFetch(`https://${apiEndpoint}/video/${id}/comments?page=${page}${!isNullOrUndefined(commentID) && !commentID.isEmpty() ? '&parent=' + commentID : ''}`, { headers: await getAuth() })).json() as Iwara.IPage
+    return (await (await unlimitedFetch(`https://${apiEndpoint}/video/${id}/comments?page=${page}${!isNullOrUndefined(commentID) && !commentID.isEmpty() ? '&parent=' + commentID : ''}`, { headers: await getAuth() })).json()) as Iwara.IPage
 }
 async function getCommentDatas(id: string, commentID?: string): Promise<Iwara.Comment[]> {
     let comments: Iwara.Comment[] = []
     let base = await getCommentData(id, commentID)
-    comments.push(...base.results as Iwara.Comment[])
+    comments.push(...(base.results as Iwara.Comment[]))
     for (let page = 1; page < Math.ceil(base.count / base.limit); page++) {
-        comments.push(...(await getCommentData(id, commentID, page)).results as Iwara.Comment[])
+        comments.push(...((await getCommentData(id, commentID, page)).results as Iwara.Comment[]))
     }
     let replies: Iwara.Comment[] = []
     for (let index = 0; index < comments.length; index++) {
         const comment = comments[index]
         if (comment.numReplies > 0) {
-            replies.push(...await getCommentDatas(id, comment.id))
+            replies.push(...(await getCommentDatas(id, comment.id)))
         }
     }
     comments.push(...replies)
@@ -39,67 +39,73 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
     let RAW: Iwara.Video | undefined = info.RAW
     try {
         switch (info.Type) {
-            case "cache":
+            case 'cache':
                 RAW = info.RAW
                 ID = RAW.id
                 Type = 'partial'
-                break;
-            case "init":
-            case "fail":
-            case "partial":
-            case "full":
+                break
+            case 'init':
+            case 'fail':
+            case 'partial':
+            case 'full':
                 log.debug('try parse full source')
-                let sourceResult = await (await unlimitedFetch(
-                    `https://${apiEndpoint}/video/${info.ID}`,
-                    {
-                        headers: await getAuth()
-                    },
-                    {
-                        retry: true,
-                        maxRetries: 3,
-                        failStatus: [403, 404],
-                        retryDelay: 1000,
-                        onRetry: async () => { await refreshToken() },
-                        onFail: async (response) => {
-                            log.debug(`${response.url} Fail, response: ${await response.clone().text()}`);
+                let sourceResult = (await (
+                    await unlimitedFetch(
+                        `https://${apiEndpoint}/video/${info.ID}`,
+                        {
+                            headers: await getAuth()
+                        },
+                        {
+                            retry: true,
+                            maxRetries: 3,
+                            failStatus: [403, 404],
+                            retryDelay: 1000,
+                            onRetry: async () => {
+                                await refreshToken()
+                            },
+                            onFail: async (response) => {
+                                log.debug(`${response.url} Fail, response: ${await response.clone().text()}`)
+                            }
                         }
-                    }
-                )).json() as Iwara.IResult
+                    )
+                ).json()) as Iwara.IResult
                 if (isNullOrUndefined(sourceResult.id)) {
                     Type = 'fail'
                     return {
-                        ID, Type, RAW, Msg: sourceResult.message ?? stringify(sourceResult)
+                        ID,
+                        Type,
+                        RAW,
+                        Msg: sourceResult.message ?? stringify(sourceResult)
                     }
                 }
                 RAW = sourceResult as Iwara.Video
                 ID = RAW.id
                 Type = 'full'
-                break;
+                break
             default:
                 Type = 'fail'
                 return {
-                    ID, Type, RAW, Msg: "Unknown type"
+                    ID,
+                    Type,
+                    RAW,
+                    Msg: 'Unknown type'
                 }
         }
     } catch (error) {
-        newToast(
-            ToastType.Error,
-            {
-                node:
-                    toastNode([
-                        `${info.RAW?.title}[${ID}] %#parsingFailed#%`
-                    ], '%#createTask#%'),
-                async onClick() {
-                    this.hide()
-                },
+        newToast(ToastType.Error, {
+            node: toastNode([`${info.RAW?.title}[${ID}] %#parsingFailed#%`], '%#createTask#%'),
+            async onClick() {
+                this.hide()
             }
-        ).show()
+        }).show()
         Type = 'fail'
         return {
-            ID, Type, RAW, Msg: stringify(error)
+            ID,
+            Type,
+            RAW,
+            Msg: stringify(error)
         }
     }
-
 
     let FileName: string
     let Size: number
@@ -131,20 +137,34 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
     Private = RAW.private
     Unlisted = RAW.unlisted
 
-
     External = !isNullOrUndefined(RAW.embedUrl) && !RAW.embedUrl.isEmpty()
     ExternalUrl = RAW.embedUrl
 
     if (External) {
         Type = 'fail'
         return {
-            Type, RAW, ID, Alias, Author, AuthorID, Private, UploadTime, Title, Tags, Liked, External, ExternalUrl, Description, Unlisted, Msg: "external Video"
+            Type,
+            RAW,
+            ID,
+            Alias,
+            Author,
+            AuthorID,
+            Private,
+            UploadTime,
+            Title,
+            Tags,
+            Liked,
+            External,
+            ExternalUrl,
+            Description,
+            Unlisted,
+            Msg: 'external Video'
         }
     }
 
     try {
         switch (Type) {
-            case "full":
+            case 'full':
                 Following = RAW.user.following
                 Friend = RAW.user.friend
 
@@ -163,10 +183,10 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 Description = RAW.body
                 FileName = RAW.file.name
                 Size = RAW.file.size
-                let VideoFileSource = (await (await unlimitedFetch(RAW.fileUrl, { headers: await getAuth(RAW.fileUrl) })).json() as Iwara.Source[]).sort((a, b) => (!isNullOrUndefined(config.priority[b.name]) ? config.priority[b.name] : 0) - (!isNullOrUndefined(config.priority[a.name]) ? config.priority[a.name] : 0))
+                let VideoFileSource = ((await (await unlimitedFetch(RAW.fileUrl, { headers: await getAuth(RAW.fileUrl) })).json()) as Iwara.Source[]).sort((a, b) => (!isNullOrUndefined(config.priority[b.name]) ? config.priority[b.name] : 0) - (!isNullOrUndefined(config.priority[a.name]) ? config.priority[a.name] : 0))
                 if (isNullOrUndefined(VideoFileSource) || !(VideoFileSource instanceof Array) || VideoFileSource.length < 1) throw new Error(i18nList[config.language].getVideoSourceFailed.toString())
                 DownloadQuality = config.checkPriority ? config.downloadPriority : VideoFileSource[0].name
-                let fileList = VideoFileSource.filter(x => x.name === DownloadQuality)
+                let fileList = VideoFileSource.filter((x) => x.name === DownloadQuality)
                 if (!fileList.any()) throw new Error(i18nList[config.language].noAvailableVideoSource.toString())
 
                 let Source = fileList[Math.floor(Math.random() * fileList.length)].src.download
@@ -178,23 +198,86 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 Comments = JSON.stringify(await getCommentDatas(ID)).normalize('NFKC')
 
                 return {
-                    Type, RAW, ID, Alias, Author, AuthorID, Private, UploadTime, Title, Tags, Liked, External, FileName, DownloadQuality, ExternalUrl, Description, Comments, DownloadUrl, Size, Following, Unlisted, Friend
+                    Type,
+                    RAW,
+                    ID,
+                    Alias,
+                    Author,
+                    AuthorID,
+                    Private,
+                    UploadTime,
+                    Title,
+                    Tags,
+                    Liked,
+                    External,
+                    FileName,
+                    DownloadQuality,
+                    ExternalUrl,
+                    Description,
+                    Comments,
+                    DownloadUrl,
+                    Size,
+                    Following,
+                    Unlisted,
+                    Friend
                 }
-            case "partial":
+            case 'partial':
                 return {
-                    Type, RAW, ID, Alias, Author, AuthorID, UploadTime, Title, Tags, Liked, External, ExternalUrl, Unlisted, Private
+                    Type,
+                    RAW,
+                    ID,
+                    Alias,
+                    Author,
+                    AuthorID,
+                    UploadTime,
+                    Title,
+                    Tags,
+                    Liked,
+                    External,
+                    ExternalUrl,
+                    Unlisted,
+                    Private
                 }
             default:
                 Type = 'fail'
                 return {
-                    Type, RAW, ID, Alias, Author, AuthorID, Private, UploadTime, Title, Tags, Liked, External, ExternalUrl, Description, Unlisted, Msg: "Unknown type"
+                    Type,
+                    RAW,
+                    ID,
+                    Alias,
+                    Author,
+                    AuthorID,
+                    Private,
+                    UploadTime,
+                    Title,
+                    Tags,
+                    Liked,
+                    External,
+                    ExternalUrl,
+                    Description,
+                    Unlisted,
+                    Msg: 'Unknown type'
                 }
         }
-    }
-    catch (error) {
+    } catch (error) {
         Type = 'fail'
         return {
-            Type, RAW, ID, Alias, Author, AuthorID, Private, UploadTime, Title, Tags, Liked, External, ExternalUrl, Description, Unlisted, Msg: stringify(error)
+            Type,
+            RAW,
+            ID,
+            Alias,
+            Author,
+            AuthorID,
+            Private,
+            UploadTime,
+            Title,
+            Tags,
+            Liked,
+            External,
+            ExternalUrl,
+            Description,
+            Unlisted,
+            Msg: stringify(error)
         }
     }
 }
@@ -207,11 +290,16 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
  */
 export function getVideoInfoCompleteness(info: VideoInfo): number {
     switch (info.Type) {
-        case 'full': return 5;
-        case 'partial': return 4;
-        case 'fail': return 3;
-        case 'cache': return 2;
-        case 'init': return 1;
+        case 'full':
+            return 5
+        case 'partial':
+            return 4
+        case 'fail':
+            return 3
+        case 'cache':
+            return 2
+        case 'init':
+            return 1
     }
 }
 
@@ -224,8 +312,8 @@ export function getVideoInfoCompleteness(info: VideoInfo): number {
  * @throws {Error} 如果 ID 不同则抛出异常
  */
 export function getMoreCompleteVideoInfo(a: VideoInfo, b: VideoInfo): VideoInfo {
-    if (a.ID !== b.ID) throw new Error(`VideoInfo ID mismatch: "${a.ID}" vs "${b.ID}"`);
-    const completenessA = getVideoInfoCompleteness(a);
-    const completenessB = getVideoInfoCompleteness(b);
-    return completenessB > completenessA ? b : a;
+    if (a.ID !== b.ID) throw new Error(`VideoInfo ID mismatch: "${a.ID}" vs "${b.ID}"`)
+    const completenessA = getVideoInfoCompleteness(a)
+    const completenessB = getVideoInfoCompleteness(b)
+    return completenessB > completenessA ? b : a
 }

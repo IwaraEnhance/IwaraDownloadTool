@@ -1,11 +1,10 @@
+import './env'
+import { isNullOrUndefined, stringify } from './env'
+import { createLogger } from './log'
+import { DownloadType } from './enum'
+import { i18nList, Language } from '../i18n'
 
-import "./env";
-import { isNullOrUndefined, stringify } from "./env";
-import { createLogger } from "./log";
-import { DownloadType } from "./enum";
-import { i18nList, Language } from "../i18n";
-
-const log = createLogger('Config');
+const log = createLogger('Config')
 const DEFAULT_CONFIG: ImportConfig = {
     language: 'zh',
     autoFollow: false,
@@ -43,17 +42,17 @@ const DEFAULT_CONFIG: ImportConfig = {
     pathTitleMaxLength: 72,
     pathAliasMaxLength: 64,
     priority: {
-        'Source': 100,
+        Source: 100,
         '540': 99,
         '360': 98,
-        'preview': 1
+        preview: 1
     }
-};
+}
 
 export class Config {
     [key: string]: any
-    private static instance: Config;
-    configChange?: Function;
+    private static instance: Config
+    configChange?: Function
     authorization?: string
     language: Language = DEFAULT_CONFIG.language
     autoFollow: boolean = DEFAULT_CONFIG.autoFollow
@@ -116,12 +115,9 @@ export class Config {
             }
         })
         for (const key of Object.keys(DEFAULT_CONFIG)) {
-            GM_addValueChangeListener(
-                key,
-                (name: string, old_value: any, new_value: any, remote: boolean) => {
-                    if (remote && !isNullOrUndefined(body.configChange)) body.configChange(name)
-                }
-            )
+            GM_addValueChangeListener(key, (name: string, old_value: any, new_value: any, remote: boolean) => {
+                if (remote && !isNullOrUndefined(body.configChange)) body.configChange(name)
+            })
         }
         if (!isNullOrUndefined(importConfig)) {
             Object.assign(body, importConfig)
@@ -132,32 +128,32 @@ export class Config {
 
     public static getInstance(): Config {
         if (isNullOrUndefined(Config.instance)) Config.instance = new Config()
-        return Config.instance;
+        return Config.instance
     }
     public static destroyInstance() {
-        Config.instance = undefined as any;
+        Config.instance = undefined as any
     }
     public static initInstance(importConfig?: ImportConfig) {
-        Config.instance = new Config(importConfig ?? DEFAULT_CONFIG);
+        Config.instance = new Config(importConfig ?? DEFAULT_CONFIG)
     }
 
     /** 尝试匹配语言，优先精确匹配，再降级到主语言部分 */
     private static resolveLanguage(lang: string): Language | undefined {
-        const normalized = lang.replace('-', '_').toLowerCase() as Language;
-        if (i18nList[normalized]) return normalized;
-        const main = normalized.split('_')[0] as Language;
-        if (i18nList[main]) return main;
-        return undefined;
+        const normalized = lang.replace('-', '_').toLowerCase() as Language
+        if (i18nList[normalized]) return normalized
+        const main = normalized.split('_')[0] as Language
+        if (i18nList[main]) return main
+        return undefined
     }
 
     private static getLanguage(value?: string): Language {
-        const candidates = [value, navigator.language, ...(navigator.languages ?? [])];
+        const candidates = [value, navigator.language, ...(navigator.languages ?? [])]
         for (const lang of candidates) {
-            if (!lang) continue;
-            const resolved = Config.resolveLanguage(lang);
-            if (resolved) return resolved;
+            if (!lang) continue
+            const resolved = Config.resolveLanguage(lang)
+            if (resolved) return resolved
         }
-        return DEFAULT_CONFIG.language;
+        return DEFAULT_CONFIG.language
     }
 }
-export const config = Config.getInstance();
+export const config = Config.getInstance()

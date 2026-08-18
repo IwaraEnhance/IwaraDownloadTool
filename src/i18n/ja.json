@@ -83,9 +83,7 @@
     "injectCheckbox": "選択ボックスを切り替え",
     "configError": "スクリプト設定にエラーがあります。修正してください。",
     "alreadyKnowHowToUse": "使用方法を理解しました!!!（このページは一度だけ表示されます）",
-    "notice": [
-        "読み込み完了"
-    ],
+    "notice": ["読み込み完了"],
     "useHelpForBase": [
         "使用ガイドをよくお読みください！",
         {

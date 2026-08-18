@@ -1,9 +1,9 @@
-import "../core/env";
-import { stringify } from "../core/env";
-import { Path } from "../core/path";
-import { ToastType } from "../core/enum";
-import { config } from "../core/config";
-import { newToast, toastNode } from "../ui/notify";
+import '../core/env'
+import { stringify } from '../core/env'
+import { Path } from '../core/path'
+import { ToastType } from '../core/enum'
+import { config } from '../core/config'
+import { newToast, toastNode } from '../ui/notify'
 
 /**
  * 根据视频信息生成下载路径
@@ -17,7 +17,7 @@ export function getDownloadPath(videoInfo: FullVideoInfo): Path {
         if (config.pathNormalize) name = name.normalize('NFKC')
         if (config.pathReplaceEmojis) name = name.replaceEmojis('_')
         if (config.pathFoldMarks) name = name.replaceAll(/(\P{Mark})(\p{Mark}+)/gu, '_')
-        if (config.pathSanitize) name = name.replace(/^\.|[\\\\/:*?\"<>|]/img, '_')
+        if (config.pathSanitize) name = name.replace(/^\.|[\\\\/:*?\"<>|]/gim, '_')
         if (config.pathTruncate) name = name.truncate(maxLength)
         return name
     }
@@ -29,7 +29,7 @@ export function getDownloadPath(videoInfo: FullVideoInfo): Path {
             ID: videoInfo.ID,
             TITLE: sanitize(videoInfo.Title, config.pathTitleMaxLength),
             ALIAS: sanitize(videoInfo.Alias, config.pathAliasMaxLength),
-            QUALITY: videoInfo.DownloadQuality,
+            QUALITY: videoInfo.DownloadQuality
         })
     )
 }
@@ -44,20 +44,13 @@ export function analyzeLocalPath(path: string): Path {
     try {
         return new Path(path)
     } catch (error) {
-        let toast = newToast(
-            ToastType.Error,
-            {
-                node: toastNode([
-                    `%#downloadPathError#%`,
-                    { nodeType: 'br' },
-                    stringify(error)
-                ], '%#settingsCheck#%'),
-                position: 'center',
-                onClick() {
-                    toast.hide()
-                }
+        let toast = newToast(ToastType.Error, {
+            node: toastNode([`%#downloadPathError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
+            position: 'center',
+            onClick() {
+                toast.hide()
             }
-        )
+        })
         toast.show()
         throw new Error(`%#downloadPathError#% ["${path}"]`)
     }

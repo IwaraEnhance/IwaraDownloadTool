@@ -1,12 +1,12 @@
-import { Version } from "./version";
-import { VersionState } from "./enum";
-import { createLogger } from "./log";
-import { i18nList } from "../i18n";
-import { config } from "./config";
-import { db } from "./db";
-import { GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION } from "./constants";
+import { Version } from './version'
+import { VersionState } from './enum'
+import { createLogger } from './log'
+import { i18nList } from '../i18n'
+import { config } from './config'
+import { db } from './db'
+import { GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION } from './constants'
 
-const log = createLogger('Migration');
+const log = createLogger('Migration')
 
 /** 迁移所需的运行时依赖（由调用方注入，避免与 main.ts 循环依赖） */
 export interface MigrationDeps {
@@ -44,8 +44,8 @@ export const migrations: ReadonlyArray<Migration> = [
             selectList.clear()
             GM_deleteValue(GM_KEY_SELECT_LIST)
             await db.delete()
-        },
-    },
+        }
+    }
 ]
 
 export type MigrationResult = 'none' | 'reload' | 'failed'

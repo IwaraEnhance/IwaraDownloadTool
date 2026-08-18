@@ -44,15 +44,15 @@
 
 #### 利用可能なパス変数
 
-| 変数名         | 説明             | 使用例                           | 出力                    |
-| -------------- | ---------------- | -------------------------------- | ----------------------- |
-| %#NowTime#%    | ダウンロード時間 | %#NowTime:YYYY-MM-DD#%           | 2022-02-22              |
+| 変数名         | 説明             | 使用例                             | 出力                |
+| -------------- | ---------------- | ---------------------------------- | ------------------- |
+| %#NowTime#%    | ダウンロード時間 | %#NowTime:YYYY-MM-DD#%             | 2022-02-22          |
 | %#UploadTime#% | 公開時間         | %#UploadTime:YYYY-MM-DD+HH.mm.ss#% | 2022-02-22+22.22.22 |
-| %#TITLE#%      | 動画タイトル     | %#TITLE#%                        | 例:タイトル             |
-| %#ID#%         | 動画ID           | %#ID#%                           | ExampleID               |
-| %#AUTHOR#%     | 動画作者         | %#AUTHOR#%                       | ExampleAuthor           |
-| %#ALIAS#%      | 作者ニックネーム | %#ALIAS#%                        | ExampleAlias            |
-| %#QUALITY#%    | 画質             | %#QUALITY#%                      | Source                  |
+| %#TITLE#%      | 動画タイトル     | %#TITLE#%                          | 例:タイトル         |
+| %#ID#%         | 動画ID           | %#ID#%                             | ExampleID           |
+| %#AUTHOR#%     | 動画作者         | %#AUTHOR#%                         | ExampleAuthor       |
+| %#ALIAS#%      | 作者ニックネーム | %#ALIAS#%                          | ExampleAlias        |
+| %#QUALITY#%    | 画質             | %#QUALITY#%                        | Source              |
 
 完全な例:
 

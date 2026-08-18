@@ -83,9 +83,7 @@
     "injectCheckbox": "开关选择框",
     "configError": "脚本配置中存在错误，请修改。",
     "alreadyKnowHowToUse": "我已知晓如何使用!!!（此页面仅显示一次）",
-    "notice": [
-        "加载完成"
-    ],
+    "notice": ["加载完成"],
     "useHelpForBase": [
         "请认真阅读使用指南！",
         {

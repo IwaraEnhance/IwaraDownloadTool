@@ -1,5 +1,5 @@
-import { originalConsole } from "./hijack";
-import { GM_KEY_IS_DEBUG } from "./constants";
+import { originalConsole } from './hijack'
+import { GM_KEY_IS_DEBUG } from './constants'
 
 /**
  * 统一日志模块：所有运行时日志通过 createLogger(tag) 获取带前缀的 logger。
@@ -10,22 +10,30 @@ import { GM_KEY_IS_DEBUG } from "./constants";
 
 export interface Logger {
     /** 调试日志：仅 isDebug 开启时输出 */
-    debug(...args: any[]): void;
+    debug(...args: any[]): void
     /** 信息日志 */
-    info(...args: any[]): void;
+    info(...args: any[]): void
     /** 警告日志 */
-    warn(...args: any[]): void;
+    warn(...args: any[]): void
     /** 错误日志 */
-    error(...args: any[]): void;
+    error(...args: any[]): void
 }
 
 /** 创建带统一前缀 `[tag]` 的 logger（debug 级别受 isDebug 开关控制） */
 export function createLogger(tag: string): Logger {
-    const prefix = `[${tag}]`;
+    const prefix = `[${tag}]`
     return {
-        debug: (...args: any[]) => { GM_getValue(GM_KEY_IS_DEBUG) && originalConsole.debug(prefix, ...args); },
-        info: (...args: any[]) => { originalConsole.info(prefix, ...args); },
-        warn: (...args: any[]) => { originalConsole.warn(prefix, ...args); },
-        error: (...args: any[]) => { originalConsole.error(prefix, ...args); },
-    };
+        debug: (...args: any[]) => {
+            GM_getValue(GM_KEY_IS_DEBUG) && originalConsole.debug(prefix, ...args)
+        },
+        info: (...args: any[]) => {
+            originalConsole.info(prefix, ...args)
+        },
+        warn: (...args: any[]) => {
+            originalConsole.warn(prefix, ...args)
+        },
+        error: (...args: any[]) => {
+            originalConsole.error(prefix, ...args)
+        }
+    }
 }

@@ -42,15 +42,15 @@
 
 #### Available Path Variables
 
-| Variable       | Description         | Example                           | Output                |
-| -------------- | ------------------- | --------------------------------- | --------------------- |
-| %#NowTime#%    | Download time       | %#NowTime:YYYY-MM-DD#%            | 2022-02-22            |
-| %#UploadTime#% | Upload time         | %#UploadTime:YYYY-MM-DD+HH.mm.ss#% | 2022-02-22+22.22.22 |
-| %#TITLE#%      | Video title         | %#TITLE#%                         | Example Title         |
-| %#ID#%         | Video ID            | %#ID#%                            | ExampleID             |
-| %#AUTHOR#%     | Video author        | %#AUTHOR#%                        | ExampleAuthor         |
-| %#ALIAS#%      | Author nickname     | %#ALIAS#%                         | ExampleAlias          |
-| %#QUALITY#%    | Quality             | %#QUALITY#%                       | Source                |
+| Variable       | Description     | Example                            | Output              |
+| -------------- | --------------- | ---------------------------------- | ------------------- |
+| %#NowTime#%    | Download time   | %#NowTime:YYYY-MM-DD#%             | 2022-02-22          |
+| %#UploadTime#% | Upload time     | %#UploadTime:YYYY-MM-DD+HH.mm.ss#% | 2022-02-22+22.22.22 |
+| %#TITLE#%      | Video title     | %#TITLE#%                          | Example Title       |
+| %#ID#%         | Video ID        | %#ID#%                             | ExampleID           |
+| %#AUTHOR#%     | Video author    | %#AUTHOR#%                         | ExampleAuthor       |
+| %#ALIAS#%      | Author nickname | %#ALIAS#%                          | ExampleAlias        |
+| %#QUALITY#%    | Quality         | %#QUALITY#%                        | Source              |
 
 Full example:
 

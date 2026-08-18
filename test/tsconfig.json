@@ -4,13 +4,7 @@
         "noEmit": true,
         "allowImportingTsExtensions": true,
         "module": "ESNext",
-        "types": [
-            "node",
-            "tampermonkey"
-        ]
+        "types": ["node", "tampermonkey"]
     },
-    "include": [
-        "./**/*.ts",
-        "../src/types/*.d.ts"
-    ]
+    "include": ["./**/*.ts", "../src/types/*.d.ts"]
 }

@@ -1,35 +1,43 @@
-import '../setup.ts';
-import { Test, TestGroup } from '../framework.ts';
-import { PageType } from '../../src/core/enum.ts';
-import { matchPathPattern, getPageTypeFromPath, PAGE_TYPE_ROUTES } from '../../src/core/pageType.ts';
+import '../setup.ts'
+import { Test, TestGroup } from '../framework.ts'
+import { PageType } from '../../src/core/enum.ts'
+import { matchPathPattern, getPageTypeFromPath, PAGE_TYPE_ROUTES } from '../../src/core/pageType.ts'
 
-const pageTypeTestGroup = new TestGroup('页面类型识别', '基于前端 React Router v3 路由表的路径段匹配测试');
+const pageTypeTestGroup = new TestGroup('页面类型识别', '基于前端 React Router v3 路由表的路径段匹配测试')
 
 // ============ matchPathPattern 基础行为 ============
 
-pageTypeTestGroup.add(new Test('精确字面量段匹配', 'async', function () {
-    this.assertEqual(matchPathPattern(['videos'], ['videos']), true);
-    this.assertEqual(matchPathPattern(['video', 'abc'], ['videos']), false);
-    this.assertEqual(matchPathPattern(['videos'], ['video']), false);
-}));
+pageTypeTestGroup.add(
+    new Test('精确字面量段匹配', 'async', function () {
+        this.assertEqual(matchPathPattern(['videos'], ['videos']), true)
+        this.assertEqual(matchPathPattern(['video', 'abc'], ['videos']), false)
+        this.assertEqual(matchPathPattern(['videos'], ['video']), false)
+    })
+)
 
-pageTypeTestGroup.add(new Test('参数段 :name 匹配任意单段', 'async', function () {
-    this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id']), true);
-    this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id', ':slug?']), true);
-    this.assertEqual(matchPathPattern(['video', 'abc', 'extra'], ['video', ':id']), false);
-}));
+pageTypeTestGroup.add(
+    new Test('参数段 :name 匹配任意单段', 'async', function () {
+        this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id']), true)
+        this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id', ':slug?']), true)
+        this.assertEqual(matchPathPattern(['video', 'abc', 'extra'], ['video', ':id']), false)
+    })
+)
 
-pageTypeTestGroup.add(new Test('尾随可选段 :name? 可省略', 'async', function () {
-    this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id', ':slug?']), true);
-    this.assertEqual(matchPathPattern(['video', 'abc', 'slug'], ['video', ':id', ':slug?']), true);
-    this.assertEqual(matchPathPattern(['video', 'abc', 'a', 'b'], ['video', ':id', ':slug?']), false);
-    this.assertEqual(matchPathPattern(['favorites'], ['favorites', ':type?']), true);
-}));
+pageTypeTestGroup.add(
+    new Test('尾随可选段 :name? 可省略', 'async', function () {
+        this.assertEqual(matchPathPattern(['video', 'abc'], ['video', ':id', ':slug?']), true)
+        this.assertEqual(matchPathPattern(['video', 'abc', 'slug'], ['video', ':id', ':slug?']), true)
+        this.assertEqual(matchPathPattern(['video', 'abc', 'a', 'b'], ['video', ':id', ':slug?']), false)
+        this.assertEqual(matchPathPattern(['favorites'], ['favorites', ':type?']), true)
+    })
+)
 
-pageTypeTestGroup.add(new Test('空模式仅匹配空路径', 'async', function () {
-    this.assertEqual(matchPathPattern([], []), true);
-    this.assertEqual(matchPathPattern(['videos'], []), false);
-}));
+pageTypeTestGroup.add(
+    new Test('空模式仅匹配空路径', 'async', function () {
+        this.assertEqual(matchPathPattern([], []), true)
+        this.assertEqual(matchPathPattern(['videos'], []), false)
+    })
+)
 
 // ============ getPageTypeFromPath 路由用例 ============
 
@@ -129,24 +137,28 @@ const pageTypeCases: ReadonlyArray<readonly [string, PageType]> = [
     ['/test', PageType.Page],
     ['/dawn/videos', PageType.Page],
     ['/unknown/xyz', PageType.Page],
-    ['/a/b/c/d/e', PageType.Page],
-];
+    ['/a/b/c/d/e', PageType.Page]
+]
 
 for (const [path, expected] of pageTypeCases) {
-    pageTypeTestGroup.add(new Test(`路径 "${path}" → ${expected}`, 'async', function () {
-        this.assertEqual(getPageTypeFromPath(path), expected);
-    }));
+    pageTypeTestGroup.add(
+        new Test(`路径 "${path}" → ${expected}`, 'async', function () {
+            this.assertEqual(getPageTypeFromPath(path), expected)
+        })
+    )
 }
 
 // ============ 路由表完整性 ============
 
-pageTypeTestGroup.add(new Test('路由表覆盖全部 PageType 枚举值', 'async', function () {
-    // 所有枚举值都应在路由表中出现（Page 作为兜底除外）
-    const covered = new Set<PageType>();
-    for (const [, type] of PAGE_TYPE_ROUTES) {
-        covered.add(type);
-    }
-    const allTypes = Object.values(PageType).filter(v => typeof v === 'string') as PageType[];
-    const missing = allTypes.filter(t => t !== PageType.Page && !covered.has(t));
-    this.assertEqual(JSON.stringify(missing), '[]');
-}));
+pageTypeTestGroup.add(
+    new Test('路由表覆盖全部 PageType 枚举值', 'async', function () {
+        // 所有枚举值都应在路由表中出现（Page 作为兜底除外）
+        const covered = new Set<PageType>()
+        for (const [, type] of PAGE_TYPE_ROUTES) {
+            covered.add(type)
+        }
+        const allTypes = Object.values(PageType).filter((v) => typeof v === 'string') as PageType[]
+        const missing = allTypes.filter((t) => t !== PageType.Page && !covered.has(t))
+        this.assertEqual(JSON.stringify(missing), '[]')
+    })
+)

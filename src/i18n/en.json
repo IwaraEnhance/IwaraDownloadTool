@@ -83,9 +83,7 @@
     "injectCheckbox": "Toggle selection box",
     "configError": "There is an error in the script configuration. Please modify.",
     "alreadyKnowHowToUse": "I already know how to use it!!!",
-    "notice": [
-        "Loading Complete"
-    ],
+    "notice": ["Loading Complete"],
     "useHelpForBase": [
         "Please read the usage guide carefully!",
         {

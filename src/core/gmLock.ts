@@ -24,9 +24,9 @@
 /** 锁值结构：存储在 GM 存储中 */
 export interface GMLockValue {
     /** 持有者唯一标识（页面实例级，如 UUID） */
-    owner: string;
+    owner: string
     /** 租约到期时间戳（毫秒） */
-    expires: number;
+    expires: number
 }
 
 /**
@@ -51,27 +51,27 @@ export enum GMLockTTL {
     /** 批处理迭代·慢迭代：单次迭代可能超过 60s（如订阅页大页解析、慢网） */
     BatchTaskSlow = 120_000,
     /** 守护心跳：心跳≈TTL/3，须大于后台标签页节流上限约 60s（如 aria2 任务管理器） */
-    DaemonTask = 75_000,
+    DaemonTask = 75_000
 }
 
 export class GMLock {
     /** GM 存储键前缀，便于 GM_listValues 遍历与清理 */
-    private static readonly PREFIX = 'GMLock:';
+    private static readonly PREFIX = 'GMLock:'
 
-    private readonly owner: string;
+    private readonly owner: string
 
     /** 各锁名的内部心跳定时器，由 release()/失去锁时清理 */
-    private readonly heartbeats = new Map<string, ReturnType<typeof setInterval>>();
+    private readonly heartbeats = new Map<string, ReturnType<typeof setInterval>>()
 
     /**
      * @param owner 持有者唯一标识（同一页面实例内应保持一致，如 UUID）
      */
     constructor(owner: string) {
-        this.owner = owner;
+        this.owner = owner
     }
 
     private static key(name: string): string {
-        return GMLock.PREFIX + name;
+        return GMLock.PREFIX + name
     }
 
     /**
@@ -82,14 +82,14 @@ export class GMLock {
      *          isHeld()/renew() 基于存储复核，以消解并发竞争）
      */
     acquire(name: string, ttl: number): boolean {
-        const key = GMLock.key(name);
-        const now = Date.now();
-        const current = GM_getValue<GMLockValue | undefined>(key);
+        const key = GMLock.key(name)
+        const now = Date.now()
+        const current = GM_getValue<GMLockValue | undefined>(key)
         // 已被其他页面持有且租约未过期 → 抢占失败
-        if (current && current.owner !== this.owner && current.expires > now) return false;
+        if (current && current.owner !== this.owner && current.expires > now) return false
         // 空闲 / 租约过期 / 本页续期 → 写入抢占
-        GM_setValue(key, { owner: this.owner, expires: now + ttl });
-        return true;
+        GM_setValue(key, { owner: this.owner, expires: now + ttl })
+        return true
     }
 
     /**
@@ -97,37 +97,37 @@ export class GMLock {
      * @returns 是否仍持有（false 表示已失去，调用方应立即停止动作并让位）
      */
     renew(name: string, ttl: number): boolean {
-        const key = GMLock.key(name);
-        const current = GM_getValue<GMLockValue | undefined>(key);
-        if (current?.owner !== this.owner) return false;
-        GM_setValue(key, { owner: this.owner, expires: Date.now() + ttl });
-        return true;
+        const key = GMLock.key(name)
+        const current = GM_getValue<GMLockValue | undefined>(key)
+        if (current?.owner !== this.owner) return false
+        GM_setValue(key, { owner: this.owner, expires: Date.now() + ttl })
+        return true
     }
 
     /** 是否仍持有该锁（基于存储校验，供执行关键动作前复核） */
     isHeld(name: string): boolean {
-        const value = GM_getValue<GMLockValue | undefined>(GMLock.key(name));
-        return !!value && value.owner === this.owner && value.expires > Date.now();
+        const value = GM_getValue<GMLockValue | undefined>(GMLock.key(name))
+        return !!value && value.owner === this.owner && value.expires > Date.now()
     }
 
     /** 启动内部心跳：每 interval 自动 renew 续期；失去锁时停止心跳并回调 onLost（幂等，重复启动先停旧心跳） */
     private startHeartbeat(name: string, ttl: number, interval: number, onLost?: (name: string) => void): void {
-        this.stopHeartbeat(name);
+        this.stopHeartbeat(name)
         const timer = setInterval(() => {
             if (!this.renew(name, ttl)) {
-                this.stopHeartbeat(name);
-                onLost?.(name);
+                this.stopHeartbeat(name)
+                onLost?.(name)
             }
-        }, interval);
-        this.heartbeats.set(name, timer);
+        }, interval)
+        this.heartbeats.set(name, timer)
     }
 
     /** 停止内部心跳定时器（幂等） */
     private stopHeartbeat(name: string): void {
-        const timer = this.heartbeats.get(name);
+        const timer = this.heartbeats.get(name)
         if (timer !== undefined) {
-            clearInterval(timer);
-            this.heartbeats.delete(name);
+            clearInterval(timer)
+            this.heartbeats.delete(name)
         }
     }
 
@@ -141,9 +141,9 @@ export class GMLock {
      * @param onLost   失去锁时回调（此时心跳已自动停止）
      */
     acquireWithHeartbeat(name: string, ttl: number, interval: number = ttl / 3, onLost?: (name: string) => void): boolean {
-        if (!this.acquire(name, ttl)) return false;
-        this.startHeartbeat(name, ttl, interval, onLost);
-        return true;
+        if (!this.acquire(name, ttl)) return false
+        this.startHeartbeat(name, ttl, interval, onLost)
+        return true
     }
 
     /**
@@ -151,17 +151,17 @@ export class GMLock {
      * @see acquireWithHeartbeat
      */
     async acquireWaitWithHeartbeat(name: string, ttl: number, interval: number = ttl / 3, onLost?: (name: string) => void, timeout: number = Infinity): Promise<boolean> {
-        if (!await this.acquireWait(name, ttl, timeout)) return false;
-        this.startHeartbeat(name, ttl, interval, onLost);
-        return true;
+        if (!(await this.acquireWait(name, ttl, timeout))) return false
+        this.startHeartbeat(name, ttl, interval, onLost)
+        return true
     }
 
     /** 释放锁（仅当仍由本页持有，避免误删他人锁）；同时停止内部心跳 */
     release(name: string): void {
-        this.stopHeartbeat(name);
-        const key = GMLock.key(name);
+        this.stopHeartbeat(name)
+        const key = GMLock.key(name)
         if (GM_getValue<GMLockValue | undefined>(key)?.owner === this.owner) {
-            GM_deleteValue(key);
+            GM_deleteValue(key)
         }
     }
 
@@ -182,40 +182,39 @@ export class GMLock {
      * @returns true 表示已成功抢占；false 表示等待超时
      */
     async acquireWait(name: string, ttl: number, timeout: number = Infinity): Promise<boolean> {
-        const deadline = Date.now() + timeout;
+        const deadline = Date.now() + timeout
         for (;;) {
-            if (this.acquire(name, ttl)) return true;
-            if (Date.now() >= deadline) return false;
+            if (this.acquire(name, ttl)) return true
+            if (Date.now() >= deadline) return false
 
-            const key = GMLock.key(name);
+            const key = GMLock.key(name)
             // 传播延迟下可能读到未过期的旧租约：按剩余租约等待（+5ms 缓冲），
             // 持有者 release 会触发 GM 事件提前唤醒，无需等满租约
-            const current = GM_getValue<GMLockValue | undefined>(key);
-            const remain = current ? Math.max(0, current.expires - Date.now()) : 0;
-            const waitMs = Math.max(0, Math.min(remain + 5, deadline - Date.now()));
+            const current = GM_getValue<GMLockValue | undefined>(key)
+            const remain = current ? Math.max(0, current.expires - Date.now()) : 0
+            const waitMs = Math.max(0, Math.min(remain + 5, deadline - Date.now()))
 
-            await new Promise<void>(resolve => {
-                let listenerId: number | undefined;
-                let timer: ReturnType<typeof setTimeout> | undefined;
+            await new Promise<void>((resolve) => {
+                let listenerId: number | undefined
+                let timer: ReturnType<typeof setTimeout> | undefined
                 const done = () => {
-                    if (listenerId !== undefined) GM_removeValueChangeListener(listenerId);
-                    if (timer !== undefined) clearTimeout(timer);
-                    resolve();
-                };
-                listenerId = GM_addValueChangeListener(key, () => done());
-                timer = setTimeout(done, waitMs);
-            });
+                    if (listenerId !== undefined) GM_removeValueChangeListener(listenerId)
+                    if (timer !== undefined) clearTimeout(timer)
+                    resolve()
+                }
+                listenerId = GM_addValueChangeListener(key, () => done())
+                timer = setTimeout(done, waitMs)
+            })
         }
     }
 
     /** 清理所有已过期的锁（利用 GM_listValues 遍历全部 GM 键） */
     static pruneExpired(): void {
-        const now = Date.now();
+        const now = Date.now()
         for (const key of GM_listValues()) {
-            if (!key.startsWith(GMLock.PREFIX)) continue;
-            const value = GM_getValue<GMLockValue | undefined>(key);
-            if (!value || value.expires <= now) GM_deleteValue(key);
+            if (!key.startsWith(GMLock.PREFIX)) continue
+            const value = GM_getValue<GMLockValue | undefined>(key)
+            if (!value || value.expires <= now) GM_deleteValue(key)
         }
     }
 }
-

@@ -10,7 +10,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    animation: overlayFadeIn .15s ease;
+    animation: overlayFadeIn 0.15s ease;
 }
 
 @keyframes overlayFadeIn {
@@ -39,13 +39,13 @@
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
     scrollbar-width: thin;
     scrollbar-color: var(--muted) transparent;
-    animation: overlayPanelIn .2s ease;
+    animation: overlayPanelIn 0.2s ease;
 }
 
 @keyframes overlayPanelIn {
     from {
         opacity: 0;
-        transform: translateY(-14px) scale(.98);
+        transform: translateY(-14px) scale(0.98);
     }
 
     to {
@@ -100,7 +100,9 @@
     background: color-mix(in srgb, var(--body) 92%, var(--text));
     cursor: pointer;
     position: relative;
-    transition: background-color .15s, border-color .15s;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
 }
 
 #pluginOverlay .checkbox:hover {
@@ -133,7 +135,9 @@
     border-radius: 8px;
     cursor: pointer;
     background-color: var(--primary);
-    transition: filter .15s, transform .1s;
+    transition:
+        filter 0.15s,
+        transform 0.1s;
 }
 
 #pluginOverlay button:hover:not([disabled]) {
@@ -141,7 +145,7 @@
 }
 
 #pluginOverlay button:active:not([disabled]) {
-    transform: scale(.97);
+    transform: scale(0.97);
 }
 
 #pluginOverlay button[disabled] {

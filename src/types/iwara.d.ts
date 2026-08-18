@@ -58,20 +58,20 @@ declare namespace Iwara {
 
     interface Playlist extends IResult {
         playlist: {
-            id: string;
-            title: string;
-            thumbnail: string | null;
-            numVideos: number;
-            user: User;
-            siteId: string;
-        };
+            id: string
+            title: string
+            thumbnail: string | null
+            numVideos: number
+            user: User
+            siteId: string
+        }
     }
 
     interface IResult {
         id?: string
         createdAt?: string
         updatedAt?: string
-        user?: User,
+        user?: User
         message?: string | null
     }
 
@@ -82,22 +82,22 @@ declare namespace Iwara {
     }
 
     interface TagBlacklist {
-        id: string;
-        type: string;
-        sensitive: boolean;
+        id: string
+        type: string
+        sensitive: boolean
     }
 
     interface Notification {
-        mention: boolean;
-        reply: boolean;
-        comment: boolean;
+        mention: boolean
+        reply: boolean
+        comment: boolean
     }
     interface LocalUser {
-        balance: number;
-        user: User;
-        tagBlacklist: TagBlacklist[];
-        profile: Profile;
-        notifications: Notification;
+        balance: number
+        user: User
+        tagBlacklist: TagBlacklist[]
+        profile: Profile
+        notifications: Notification
     }
     interface Profile extends IResult {
         user: User
@@ -119,7 +119,7 @@ declare namespace Iwara {
         numViews: number
         numComments: number
         file: File
-        user: User,
+        user: User
         customThumbnail: any
         tags: Tag[]
         fileUrl: string

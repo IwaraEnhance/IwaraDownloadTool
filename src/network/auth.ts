@@ -1,13 +1,13 @@
-import "../core/env";
-import { isNullOrUndefined, prune } from "../core/env";
-import { config } from "../core/config";
-import { createLogger } from "../core/log";
-import { unlimitedFetch } from "../core/extension";
-import { LS_KEY_ACCESS_TOKEN, LS_KEY_TOKEN } from "../core/constants";
-import { apiEndpoint } from "../main";
-import { getXVersion } from "./xVersion";
+import '../core/env'
+import { isNullOrUndefined, prune } from '../core/env'
+import { config } from '../core/config'
+import { createLogger } from '../core/log'
+import { unlimitedFetch } from '../core/extension'
+import { LS_KEY_ACCESS_TOKEN, LS_KEY_TOKEN } from '../core/constants'
+import { apiEndpoint } from '../main'
+import { getXVersion } from './xVersion'
 
-const log = createLogger('Auth');
+const log = createLogger('Auth')
 
 /**
  * 判断是否已登录（同步）。
@@ -100,48 +100,44 @@ export async function verifyLogin(force = false): Promise<boolean> {
  * @returns {Promise<string>} 返回新的访问令牌或回退到配置中的授权令牌
  */
 export async function refreshToken(): Promise<string> {
-    const { authorization } = config;
+    const { authorization } = config
     if (!isLoggedIn()) throw new Error(`Refresh token failed: Not logged in`)
-    const refreshToken = localStorage.getItem(LS_KEY_TOKEN) ?? authorization;
+    const refreshToken = localStorage.getItem(LS_KEY_TOKEN) ?? authorization
     if (isNullOrUndefined(refreshToken) || refreshToken.isEmpty()) {
-        throw new Error(`Refresh token failed: no refresh token`);
+        throw new Error(`Refresh token failed: no refresh token`)
     }
 
-    const oldAccessToken = localStorage.getItem(LS_KEY_ACCESS_TOKEN);
+    const oldAccessToken = localStorage.getItem(LS_KEY_ACCESS_TOKEN)
     try {
-        const res = await unlimitedFetch(
-            `https://${apiEndpoint}/user/token`,
-            {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${refreshToken}`
-                }
+        const res = await unlimitedFetch(`https://${apiEndpoint}/user/token`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${refreshToken}`
             }
-        );
+        })
 
         if (!res.ok) {
-            throw new Error(`Refresh token failed with status: ${res.status}`);
+            throw new Error(`Refresh token failed with status: ${res.status}`)
         }
 
-        const { accessToken } = await res.json();
+        const { accessToken } = await res.json()
         if (!accessToken) {
-            throw new Error(`No access token in response`);
+            throw new Error(`No access token in response`)
         }
 
         if (!oldAccessToken || oldAccessToken !== accessToken) {
-            localStorage.setItem(LS_KEY_ACCESS_TOKEN, accessToken);
+            localStorage.setItem(LS_KEY_ACCESS_TOKEN, accessToken)
         }
 
-        return accessToken;
-
+        return accessToken
     } catch (error) {
-        log.warn('Failed to refresh token:', error);
+        log.warn('Failed to refresh token:', error)
 
         if (!oldAccessToken?.trim()) {
-            throw new Error(`Refresh token failed and no valid access token available`);
+            throw new Error(`Refresh token failed and no valid access token available`)
         }
 
-        return oldAccessToken;
+        return oldAccessToken
     }
 }
 
@@ -151,12 +147,12 @@ export async function refreshToken(): Promise<string> {
  * @param {string} [url] - 可选URL参数，用于生成X-Version头
  * @returns 包含Cookie和Authorization的请求头对象
  */
-export async function getAuth(url?: string): Promise<{ Cooike: string; Authorization: string; } & { 'X-Version': string; }> {
+export async function getAuth(url?: string): Promise<{ Cooike: string; Authorization: string } & { 'X-Version': string }> {
     return prune({
-        'Referer': `${window.location.origin}/`,
-        'Accept': 'application/json',
-        'Cooike': unsafeWindow.document.cookie,
-        'Authorization': isLoggedIn() ? `Bearer ${localStorage.getItem(LS_KEY_ACCESS_TOKEN) ?? await refreshToken()}` : undefined,
+        Referer: `${window.location.origin}/`,
+        Accept: 'application/json',
+        Cooike: unsafeWindow.document.cookie,
+        Authorization: isLoggedIn() ? `Bearer ${localStorage.getItem(LS_KEY_ACCESS_TOKEN) ?? (await refreshToken())}` : undefined,
         'X-Version': !isNullOrUndefined(url) && !url.isEmpty() ? await getXVersion(url) : undefined,
         'X-Site': unsafeWindow.location.hostname
     })

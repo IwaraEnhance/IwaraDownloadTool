@@ -1,0 +1,21 @@
+{
+    "printWidth": 9999,
+    "tabWidth": 4,
+    "useTabs": false,
+    "semi": false,
+    "singleQuote": true,
+    "quoteProps": "as-needed",
+    "trailingComma": "none",
+    "bracketSpacing": true,
+    "arrowParens": "always",
+    "endOfLine": "crlf",
+    "overrides": [
+        {
+            "files": ["*.yml", "*.yaml"],
+            "options": {
+                "tabWidth": 2,
+                "singleQuote": false
+            }
+        }
+    ]
+}

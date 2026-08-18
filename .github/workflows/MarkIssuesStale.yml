@@ -19,18 +19,18 @@ jobs:
             ### ⚠️ 此 Issue 被标记为过期  
             这个 issue 因为最近没有活动而被自动标记为过期。如果近期仍然没有进一步的活动，它将被关闭。  
             感谢您的贡献！  
-            
+
             ---  
             ### ⚠️ This Issue Has Been Marked as Stale  
             This issue has been automatically marked as stale because it has not had recent activity.  
             If no further activity occurs, it will be closed soon.  
             Thank you for your contributions!  
-            
+
             ---  
             ### ⚠️ この Issue は期限切れとしてマークされました  
             この issue は最近活動がなかったため、自動的に期限切れとしてマークされました。  
             近日中にさらなる活動がない場合は、閉鎖されます。  
-            ご協力ありがとうございます！  
+            ご協力ありがとうございます！
           close-issue-message: |
             ### 🚪 此 Issue 已被关闭  
             由于此 issue 在被标记为过期后，近期仍然没有进一步的活动，因此它已被自动关闭。  
@@ -47,14 +47,14 @@ jobs:
             ### 🚪 この Issue は閉鎖されました  
             この issue は期限切れとしてマークされた後、最近活動がなかったため、自動的に閉鎖されました。  
             これが間違いであると思われる場合は、この issue を再開するか、新しい issue を作成してください。  
-            ご協力ありがとうございます！  
+            ご協力ありがとうございます！
           days-before-stale: 4
           days-before-close: 3
           days-before-pr-stale: -1
           days-before-pr-close: -1
           remove-stale-when-updated: true
           operations-per-run: 30
-          stale-issue-label: '过期'
-          close-issue-label: '自动关闭'
-          exempt-issue-labels: 'pinned,处理中'
+          stale-issue-label: "过期"
+          close-issue-label: "自动关闭"
+          exempt-issue-labels: "pinned,处理中"
           debug-only: false

@@ -11,7 +11,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    animation: configFadeIn .15s ease;
+    animation: configFadeIn 0.15s ease;
 }
 
 @keyframes configFadeIn {
@@ -38,13 +38,13 @@
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
     scrollbar-width: thin;
     scrollbar-color: var(--muted) transparent;
-    animation: configPanelIn .2s ease;
+    animation: configPanelIn 0.2s ease;
 }
 
 @keyframes configPanelIn {
     from {
         opacity: 0;
-        transform: translateY(-14px) scale(.98);
+        transform: translateY(-14px) scale(0.98);
     }
 
     to {
@@ -68,7 +68,7 @@
     text-align: center;
     font-size: 20px;
     font-weight: 700;
-    letter-spacing: .5px;
+    letter-spacing: 0.5px;
     color: var(--primary);
 }
 
@@ -93,7 +93,9 @@
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    transition: filter .15s, transform .1s;
+    transition:
+        filter 0.15s,
+        transform 0.1s;
 }
 
 #pluginConfig .buttonList button:hover {
@@ -101,7 +103,7 @@
 }
 
 #pluginConfig .buttonList button:active {
-    transform: scale(.97);
+    transform: scale(0.97);
 }
 
 #pluginConfig .buttonList button[disabled] {
@@ -128,7 +130,7 @@
     background: color-mix(in srgb, var(--body) 94%, var(--text));
 }
 
-#pluginConfig fieldset>.fieldTitle {
+#pluginConfig fieldset > .fieldTitle {
     margin: 0 0 6px 0;
     font-size: 12px;
     font-weight: 700;
@@ -149,12 +151,12 @@
     background: none;
 }
 
-#pluginConfig fieldset.downloadType>.fieldTitle {
+#pluginConfig fieldset.downloadType > .fieldTitle {
     width: 100%;
     margin-bottom: 6px;
 }
 
-#pluginConfig fieldset.downloadType>label {
+#pluginConfig fieldset.downloadType > label {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -164,14 +166,17 @@
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
     cursor: pointer;
-    transition: background-color .15s, border-color .15s, color .15s;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s,
+        color 0.15s;
 }
 
-#pluginConfig fieldset.downloadType>label:hover {
+#pluginConfig fieldset.downloadType > label:hover {
     border-color: var(--primary);
 }
 
-#pluginConfig fieldset.downloadType>label:has(input:checked) {
+#pluginConfig fieldset.downloadType > label:has(input:checked) {
     background: color-mix(in srgb, var(--primary) 16%, transparent);
     border-color: var(--primary);
     color: var(--primary);
@@ -210,9 +215,9 @@
     user-select: none;
 }
 
-#pluginConfig input[type="text"],
-#pluginConfig input[type="password"],
-#pluginConfig input[type="number"] {
+#pluginConfig input[type='text'],
+#pluginConfig input[type='password'],
+#pluginConfig input[type='number'] {
     outline: none;
     border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
     border-radius: 8px;
@@ -224,12 +229,14 @@
     background-color: color-mix(in srgb, var(--body) 92%, var(--text));
     color: var(--text);
     font-size: 14px;
-    transition: border-color .15s, box-shadow .15s;
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
 }
 
-#pluginConfig input[type="text"]:focus,
-#pluginConfig input[type="password"]:focus,
-#pluginConfig input[type="number"]:focus {
+#pluginConfig input[type='text']:focus,
+#pluginConfig input[type='password']:focus,
+#pluginConfig input[type='number']:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
@@ -246,7 +253,7 @@
     background: var(--muted);
     border-radius: 999px;
     cursor: pointer;
-    transition: background-color .2s;
+    transition: background-color 0.2s;
 }
 
 #pluginConfig input[type='checkbox'].switch::after {
@@ -259,7 +266,7 @@
     border-radius: 50%;
     background: var(--white);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-    transition: transform .2s;
+    transition: transform 0.2s;
 }
 
 #pluginConfig input[type='checkbox'].switch:checked {
@@ -296,7 +303,9 @@
     border-bottom: 2px solid transparent;
     border-radius: 0;
     cursor: pointer;
-    transition: color .15s, border-color .15s;
+    transition:
+        color 0.15s,
+        border-color 0.15s;
 }
 
 #pluginConfig .tabs button:hover {
@@ -328,7 +337,7 @@
     font-size: 12px;
     color: var(--muted);
     margin: 0 0 4px 2px;
-    letter-spacing: .3px;
+    letter-spacing: 0.3px;
 }
 
 /* 语言选择行（胶囊一体式：图标 + 文字 + 无边框输入框） */
@@ -343,7 +352,9 @@
     background: color-mix(in srgb, var(--body) 92%, var(--text));
     border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
     border-radius: 10px;
-    transition: border-color .15s, box-shadow .15s;
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
 }
 
 #pluginConfig .languageLine::before {
