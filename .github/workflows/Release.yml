@@ -9,6 +9,8 @@ env:
 jobs:
   # 判断标签指向：仅当标签指向 master 时才构建正式版
   check:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     outputs:
       is_latest: ${{ steps.channel.outputs.is_latest }}

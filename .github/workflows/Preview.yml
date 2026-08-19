@@ -9,6 +9,8 @@ env:
 jobs:
   # 判断标签指向：仅当标签指向 dev（不是 master）时才构建预览版
   check:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     outputs:
       is_preview: ${{ steps.channel.outputs.is_preview }}
