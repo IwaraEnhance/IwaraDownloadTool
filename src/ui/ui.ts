@@ -1,24 +1,24 @@
-import { Config, config } from "../core/config";
-import { db } from "../core/db";
-import { DownloadType, PageType, ToastType } from "../core/enum";
-import { isNullOrUndefined, delay, stringify, UUID } from "../core/env";
-import { renderNode, unlimitedFetch } from "../core/extension";
-import { check } from "../network/envCheck";
-import { getAuth, isLoggedIn, refreshToken, verifyLogin } from "../network/auth";
-import { newToast, toastNode } from "./notify";
-import { parseVideoInfo } from "../network/video";
-import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from "../download/downloadQueue";
-import { importConfig } from "./configUi";
-import { syncCachedToMediaCenter } from "../network/mediaCenter";
-import { originalNodeAppendChild, originalAddEventListener } from "../core/hijack";
-import { createLogger } from "../core/log";
-import { GMLock, GMLockTTL } from "../core/gmLock";
-import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_VERSION } from "../core/constants";
-import { i18nList, type Language } from "../i18n";
-import { apiEndpoint, editConfig, getPageType, pageSelectButtons, rating, selectList } from "../main";
-import site from "../data/site.json";
+import { Config, config } from '../core/config'
+import { db } from '../core/db'
+import { DownloadType, PageType, ToastType } from '../core/enum'
+import { isNullOrUndefined, delay, stringify, UUID } from '../core/env'
+import { renderNode, unlimitedFetch } from '../core/extension'
+import { check } from '../network/envCheck'
+import { getAuth, isLoggedIn, refreshToken, verifyLogin } from '../network/auth'
+import { newToast, toastNode } from './notify'
+import { parseVideoInfo } from '../network/video'
+import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from '../download/downloadQueue'
+import { importConfig } from './configUi'
+import { syncCachedToMediaCenter } from '../network/mediaCenter'
+import { originalNodeAppendChild, originalAddEventListener } from '../core/hijack'
+import { createLogger } from '../core/log'
+import { GMLock, GMLockTTL } from '../core/gmLock'
+import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_VERSION } from '../core/constants'
+import { i18nList, type Language } from '../i18n'
+import { apiEndpoint, editConfig, getPageType, pageSelectButtons, rating, selectList } from '../main'
+import site from '../data/site.json'
 
-const log = createLogger('UI');
+const log = createLogger('UI')
 
 /** 一个月的毫秒数（计算值，JSON 只能存字面量无法表达，故保留在 TS） */
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000
@@ -33,7 +33,7 @@ export function uninjectCheckbox(element: Element | Node) {
             element.hasAttribute('videoID') && pageSelectButtons.delete(element.getAttribute('videoID')!)
         }
         if (element.querySelector('input.selectButton')) {
-            element.querySelectorAll('.selectButton').forEach(i => i.hasAttribute('videoID') && pageSelectButtons.delete(i.getAttribute('videoID')!))
+            element.querySelectorAll('.selectButton').forEach((i) => i.hasAttribute('videoID') && pageSelectButtons.delete(i.getAttribute('videoID')!))
         }
     }
 }
@@ -45,9 +45,9 @@ export async function injectCheckbox(element: Element) {
     let info = await db.getVideoById(ID)
     const hasFullInfo = info?.Type === 'full' || info?.Type === 'partial'
     const authorLink = element.querySelector('a.username') as HTMLLinkElement | null
-    let Title = hasFullInfo ? info?.Title : info?.RAW?.title ?? element.querySelector('.videoTeaser__title')?.getAttribute('title') ?? undefined;
-    let Alias = hasFullInfo ? info?.Alias : info?.RAW?.user.name ?? authorLink?.getAttribute('title') ?? undefined;
-    let Author = hasFullInfo ? info?.Author : info?.RAW?.user.username ?? authorLink?.href.toURL().pathname.split('/').pop()
+    let Title = hasFullInfo ? info?.Title : (info?.RAW?.title ?? element.querySelector('.videoTeaser__title')?.getAttribute('title') ?? undefined)
+    let Alias = hasFullInfo ? info?.Alias : (info?.RAW?.user.name ?? authorLink?.getAttribute('title') ?? undefined)
+    let Author = hasFullInfo ? info?.Author : (info?.RAW?.user.username ?? authorLink?.href.toURL().pathname.split('/').pop())
     let UploadTime = hasFullInfo ? info?.UploadTime : new Date(info?.RAW?.updatedAt ?? 0).getTime()
 
     let button = renderNode({
@@ -64,14 +64,16 @@ export async function injectCheckbox(element: Element) {
         className: 'selectButton',
         events: {
             click: (event: Event) => {
-                (event.target as HTMLInputElement).checked ? selectList.set(ID, {
-                    Type: 'init',
-                    ID,
-                    Title,
-                    Alias,
-                    Author,
-                    UploadTime
-                }) : selectList.delete(ID)
+                ;(event.target as HTMLInputElement).checked
+                    ? selectList.set(ID, {
+                          Type: 'init',
+                          ID,
+                          Title,
+                          Alias,
+                          Author,
+                          UploadTime
+                      })
+                    : selectList.delete(ID)
                 event.stopPropagation()
                 event.stopImmediatePropagation()
                 return false
@@ -86,8 +88,9 @@ export async function injectCheckbox(element: Element) {
     if (!isNullOrUndefined(Author)) {
         const AuthorInfo = await db.getFollowByUsername(Author)
         if (AuthorInfo?.following && thumbnail.querySelector('.follow') === null) {
-            originalNodeAppendChild.call(thumbnail, renderNode(
-                {
+            originalNodeAppendChild.call(
+                thumbnail,
+                renderNode({
                     nodeType: 'div',
                     className: 'follow',
                     childs: {
@@ -95,17 +98,18 @@ export async function injectCheckbox(element: Element) {
                         className: ['text', 'text--white', 'text--tiny', 'text--bold'],
                         childs: '%#following#%'
                     }
-                }
-            ))
+                })
+            )
         }
     }
 
     // 检查 MediaCenter 映射，显示是否已下载（仅在配置了 MediaCenter 时启用）
     if (!config.mediaCenterApi.isEmpty() && !config.mediaCenterApiKey.isEmpty()) {
-        const mediaCenterId = await db.getMediaCenterIdMap(ID);
+        const mediaCenterId = await db.getMediaCenterIdMap(ID)
         if (!isNullOrUndefined(mediaCenterId) && !mediaCenterId.isEmpty() && thumbnail.querySelector('.downloaded') === null) {
-            originalNodeAppendChild.call(thumbnail, renderNode(
-                {
+            originalNodeAppendChild.call(
+                thumbnail,
+                renderNode({
                     nodeType: 'div',
                     className: 'downloaded',
                     childs: {
@@ -113,8 +117,8 @@ export async function injectCheckbox(element: Element) {
                         className: ['text', 'text--white', 'text--tiny', 'text--bold'],
                         childs: '%#downloaded#%'
                     }
-                }
-            ))
+                })
+            )
         }
     }
 
@@ -130,10 +134,14 @@ export async function injectCheckbox(element: Element) {
                 className: 'deleteButton',
                 events: {
                     click: async (event: Event) => {
-                        if ((await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
-                            method: 'DELETE',
-                            headers: await getAuth()
-                        })).ok) {
+                        if (
+                            (
+                                await unlimitedFetch(`https://${apiEndpoint}/playlist/${unsafeWindow.location.pathname.split('/')[2]}/${ID}`, {
+                                    method: 'DELETE',
+                                    headers: await getAuth()
+                                })
+                            ).ok
+                        ) {
                             newToast(ToastType.Info, { text: `${Title} %#deleteSucceed#%`, close: true }).show()
                             deletePlaylistItme.remove()
                         }
@@ -153,7 +161,7 @@ export async function injectCheckbox(element: Element) {
 // 当前登录用户缓存（Promise 缓存，避免并发重复请求）
 let localUserPromise: Promise<Iwara.User | null> | null = null
 // 播放列表所有者 ID 缓存（按 playlistId 缓存 Promise）
-let playlistOwnerPromise: { playlistId: string, promise: Promise<string> } | null = null
+let playlistOwnerPromise: { playlistId: string; promise: Promise<string> } | null = null
 
 /** 获取当前登录用户（缓存） */
 function getLocalUser(): Promise<Iwara.User | null> {
@@ -166,7 +174,7 @@ function getLocalUser(): Promise<Iwara.User | null> {
                     headers: await getAuth()
                 })
                 if (!res.ok) return null
-                return (await res.json() as Iwara.LocalUser).user ?? null
+                return ((await res.json()) as Iwara.LocalUser).user ?? null
             } catch (error) {
                 log.warn('Failed to get local user:', error)
                 return null
@@ -188,7 +196,7 @@ function getPlaylistOwnerId(playlistId: string): Promise<string> {
                         headers: await getAuth()
                     })
                     if (!res.ok) return ''
-                    return (await res.json() as Iwara.Playlist).playlist?.user?.id ?? ''
+                    return ((await res.json()) as Iwara.Playlist).playlist?.user?.id ?? ''
                 } catch (error) {
                     log.warn('Failed to get playlist owner:', error)
                     return ''
@@ -206,8 +214,6 @@ async function isCurrentUserPlaylistOwner(playlistId: string): Promise<boolean> 
     const ownerId = await getPlaylistOwnerId(playlistId)
     return ownerId !== '' && localUser.id === ownerId
 }
-
-
 
 /** 配置编辑 schema：声明每个配置项的渲染方式、分组、显隐条件与特殊行为。
  * 新增配置项只需在此数组加一行；渲染（pageChange）、回写（configChange）、
@@ -236,7 +242,7 @@ const TABS: { id: string; visible: (target: Config) => boolean }[] = [
     { id: 'iwaradl', visible: (target) => target.downloadType === DownloadType.Iwaradl },
     { id: 'mediaCenter', visible: (target) => target.downloadType === DownloadType.Aria2 && target.experimentalFeatures },
     // 高级页（实验性 / 风险 / 调试）固定在最后
-    { id: 'advanced', visible: () => true },
+    { id: 'advanced', visible: () => true }
 ]
 
 const CONFIG_FIELDS: ConfigField[] = [
@@ -252,12 +258,26 @@ const CONFIG_FIELDS: ConfigField[] = [
     { name: 'filterLikedVideos', type: 'switch', tabs: ['general'], group: 'selection' },
     // 常规页：可见性
     {
-        name: 'addUnlistedAndPrivate', type: 'switch', tabs: ['general'], group: 'visibility',
-        onSet: (target, e) => { const checked = (e.target as HTMLInputElement).checked; target.addUnlistedAndPrivate = checked; if (checked) target.filterUnlistedAndPrivate = false }
+        name: 'addUnlistedAndPrivate',
+        type: 'switch',
+        tabs: ['general'],
+        group: 'visibility',
+        onSet: (target, e) => {
+            const checked = (e.target as HTMLInputElement).checked
+            target.addUnlistedAndPrivate = checked
+            if (checked) target.filterUnlistedAndPrivate = false
+        }
     },
     {
-        name: 'filterUnlistedAndPrivate', type: 'switch', tabs: ['general'], group: 'visibility',
-        onSet: (target, e) => { const checked = (e.target as HTMLInputElement).checked; target.filterUnlistedAndPrivate = checked; if (checked) target.addUnlistedAndPrivate = false }
+        name: 'filterUnlistedAndPrivate',
+        type: 'switch',
+        tabs: ['general'],
+        group: 'visibility',
+        onSet: (target, e) => {
+            const checked = (e.target as HTMLInputElement).checked
+            target.filterUnlistedAndPrivate = checked
+            if (checked) target.addUnlistedAndPrivate = false
+        }
     },
     // 常规页：界面
     { name: 'autoCollapseMenu', type: 'switch', tabs: ['general'], group: 'interface' },
@@ -267,9 +287,15 @@ const CONFIG_FIELDS: ConfigField[] = [
     { name: 'experimentalFeatures', type: 'switch', tabs: ['advanced'], rerender: true },
     { name: 'enableUnsafeMode', type: 'switch', tabs: ['advanced'] },
     {
-        name: 'isDebug', type: 'switch', tabs: ['advanced'], defaultValue: false,
+        name: 'isDebug',
+        type: 'switch',
+        tabs: ['advanced'],
+        defaultValue: false,
         get: (name, defaultValue) => GM_getValue(name, defaultValue),
-        onSet: (target, e) => { GM_setValue(GM_KEY_IS_DEBUG, (e.target as HTMLInputElement).checked); unsafeWindow.location.reload() }
+        onSet: (target, e) => {
+            GM_setValue(GM_KEY_IS_DEBUG, (e.target as HTMLInputElement).checked)
+            unsafeWindow.location.reload()
+        }
     },
     // 下载页（下载画质在前，下载位置在后）
     { name: 'downloadPriority', type: 'text', tabs: ['download'], group: 'download', visible: (target) => target.checkPriority },
@@ -293,18 +319,20 @@ const CONFIG_FIELDS: ConfigField[] = [
     { name: 'mediaCenterApiKey', type: 'password', tabs: ['mediaCenter'], group: 'mediaCenter' },
     // iwaradl 页
     { name: 'iwaradlPath', type: 'text', tabs: ['iwaradl'], group: 'iwaradl', help: { text: '%#iwaradlLink#%', href: 'https://github.com/Izumiko/iwaradl' } },
-    { name: 'iwaradlToken', type: 'password', tabs: ['iwaradl'], group: 'iwaradl' },
+    { name: 'iwaradlToken', type: 'password', tabs: ['iwaradl'], group: 'iwaradl' }
 ]
 
 export class configEdit {
     target: Config
-    interface: HTMLDivElement;
-    tabButtons: HTMLDivElement;
-    tabPanels: HTMLDivElement;
-    activeTab = 'general';
+    interface: HTMLDivElement
+    tabButtons: HTMLDivElement
+    tabPanels: HTMLDivElement
+    activeTab = 'general'
     constructor(config: Config) {
         this.target = config
-        this.target.configChange = (item: string) => { this.configChange.call(this, item) }
+        this.target.configChange = (item: string) => {
+            this.configChange.call(this, item)
+        }
         this.tabButtons = renderNode({
             nodeType: 'div',
             className: 'tabs'
@@ -312,7 +340,7 @@ export class configEdit {
         this.tabPanels = renderNode({
             nodeType: 'div',
             className: 'tabPanels',
-            childs: TABS.map(tab => ({
+            childs: TABS.map((tab) => ({
                 nodeType: 'div',
                 className: 'tabPanel',
                 attributes: {
@@ -371,26 +399,24 @@ export class configEdit {
                 {
                     nodeType: 'p',
                     className: 'buttonList',
-                    childs: [
-                        reset,
-                        save
-                    ]
+                    childs: [reset, save]
                 }
             ]
         })
-
     }
     /** 按 schema 渲染单个配置项（switch 用开关，其余用输入框，带 help/dependsOn） */
     private renderField(field: ConfigField): Element {
         if (field.type === 'switch') {
             return this.switchButton(field.name, field.get, field.onSet ? (name, e) => field.onSet!(this.target, e) : undefined, field.defaultValue)
         }
-        const help = field.help ? renderNode({
-            nodeType: 'a',
-            childs: field.help.text,
-            className: 'rainbow-text',
-            attributes: { style: 'float: inline-end;', href: field.help.href }
-        }) : undefined
+        const help = field.help
+            ? renderNode({
+                  nodeType: 'a',
+                  childs: field.help.text,
+                  className: 'rainbow-text',
+                  attributes: { style: 'float: inline-end;', href: field.help.href }
+              })
+            : undefined
         return this.inputComponent(field.name, field.type, help, undefined, undefined, field.dependsOn)
     }
     private switchButton(name: string, get?: (name: string, defaultValue?: any) => any, set?: (name: string, e: Event) => void, defaultValue?: boolean) {
@@ -404,13 +430,14 @@ export class configEdit {
                     attributes: {
                         for: name
                     }
-                }, {
+                },
+                {
                     nodeType: 'input',
                     className: 'switch',
                     attributes: {
                         type: 'checkbox',
                         name: name,
-                        checked: get !== undefined ? get(name, defaultValue) : this.target[name] ?? defaultValue ?? false
+                        checked: get !== undefined ? get(name, defaultValue) : (this.target[name] ?? defaultValue ?? false)
                     },
                     events: {
                         change: (e: Event) => {
@@ -435,10 +462,7 @@ export class configEdit {
             childs: [
                 {
                     nodeType: 'span',
-                    childs: [
-                        `%#${name}#%`,
-                        help
-                    ],
+                    childs: [`%#${name}#%`, help]
                 },
                 {
                     nodeType: 'input',
@@ -472,34 +496,36 @@ export class configEdit {
                     className: 'fieldTitle',
                     childs: '%#downloadType#%'
                 },
-                ...Object.keys(DownloadType).filter((i: any) => isNaN(Number(i))).map((type: string, index: number) =>
-                    renderNode({
-                        nodeType: 'label',
-                        childs: [
-                            {
-                                nodeType: 'input',
-                                attributes: {
-                                    type: 'radio',
-                                    name: 'downloadType',
-                                    value: index,
-                                    checked: index === Number(this.target.downloadType)
-                                },
-                                events: {
-                                    change: (e) => {
-                                        this.target.downloadType = Number((e.target as HTMLInputElement).value)
+                ...Object.keys(DownloadType)
+                    .filter((i: any) => isNaN(Number(i)))
+                    .map((type: string, index: number) =>
+                        renderNode({
+                            nodeType: 'label',
+                            childs: [
+                                {
+                                    nodeType: 'input',
+                                    attributes: {
+                                        type: 'radio',
+                                        name: 'downloadType',
+                                        value: index,
+                                        checked: index === Number(this.target.downloadType)
+                                    },
+                                    events: {
+                                        change: (e) => {
+                                            this.target.downloadType = Number((e.target as HTMLInputElement).value)
+                                        }
                                     }
-                                }
-                            },
-                            type
-                        ]
-                    })
-                )
+                                },
+                                type
+                            ]
+                        })
+                    )
             ]
         })
     }
     /** 根据依赖开关的当前状态，控制带 data-depends-on 的输入框显隐（关闭开关则隐藏其依赖输入框） */
     private updateVisibility() {
-        this.interface.querySelectorAll<HTMLElement>('[data-depends-on]').forEach(element => {
+        this.interface.querySelectorAll<HTMLElement>('[data-depends-on]').forEach((element) => {
             const dependsOn = element.dataset.dependsOn
             if (dependsOn) element.style.display = this.target[dependsOn] ? '' : 'none'
         })
@@ -507,14 +533,14 @@ export class configEdit {
     private configChange(item: string) {
         if (item === 'downloadType') {
             // 下载方式：同步 radio 选中态，重建标签页（不自动跳转，停留在当前页）
-            this.interface.querySelectorAll<HTMLInputElement>('[name=downloadType]').forEach(radio => {
+            this.interface.querySelectorAll<HTMLInputElement>('[name=downloadType]').forEach((radio) => {
                 radio.checked = Number(radio.value) === Number(this.target.downloadType)
             })
             this.renderAllTabs()
             return
         }
         // 影响布局的字段（其 visible 条件变化）→ 重建标签页
-        if (CONFIG_FIELDS.find(field => field.name === item)?.rerender) {
+        if (CONFIG_FIELDS.find((field) => field.name === item)?.rerender) {
             this.renderAllTabs()
             return
         }
@@ -530,10 +556,10 @@ export class configEdit {
     /** 切换标签页：仅切换显示与激活态，不重建内容（避免丢失输入焦点） */
     private tabChange(tab: string) {
         this.activeTab = tab
-        this.tabButtons.querySelectorAll<HTMLButtonElement>('button.tab').forEach(button => {
+        this.tabButtons.querySelectorAll<HTMLButtonElement>('button.tab').forEach((button) => {
             button.classList.toggle('active', button.dataset.tab === tab)
         })
-        this.tabPanels.querySelectorAll<HTMLElement>('.tabPanel').forEach(panel => {
+        this.tabPanels.querySelectorAll<HTMLElement>('.tabPanel').forEach((panel) => {
             panel.style.display = panel.dataset.tab === tab ? '' : 'none'
         })
         this.updateVisibility()
@@ -541,7 +567,7 @@ export class configEdit {
     /** 重建标签栏与所有可见页内容（下载方式 / rerender 变化时调用） */
     private renderAllTabs() {
         // 当前激活页若已不再可见（如切换下载方式后下载器页消失），回退到常规页，避免所有面板都隐藏
-        if (!TABS.find(tab => tab.id === this.activeTab && tab.visible(this.target))) {
+        if (!TABS.find((tab) => tab.id === this.activeTab && tab.visible(this.target))) {
             this.activeTab = 'general'
         }
         // 标签栏：按条件显隐 + 激活态
@@ -550,18 +576,23 @@ export class configEdit {
         }
         for (const tab of TABS) {
             if (!tab.visible(this.target)) continue
-            originalNodeAppendChild.call(this.tabButtons, renderNode({
-                nodeType: 'button',
-                className: this.activeTab === tab.id ? ['tab', 'active'] : 'tab',
-                attributes: {
-                    'data-tab': tab.id,
-                    type: 'button'
-                },
-                childs: `%#${tab.id}Tab#%`,
-                events: {
-                    click: () => { this.tabChange(tab.id) }
-                }
-            }))
+            originalNodeAppendChild.call(
+                this.tabButtons,
+                renderNode({
+                    nodeType: 'button',
+                    className: this.activeTab === tab.id ? ['tab', 'active'] : 'tab',
+                    attributes: {
+                        'data-tab': tab.id,
+                        type: 'button'
+                    },
+                    childs: `%#${tab.id}Tab#%`,
+                    events: {
+                        click: () => {
+                            this.tabChange(tab.id)
+                        }
+                    }
+                })
+            )
         }
         // 各页内容：按 tab 过滤 schema，再按 group 渲染为 fieldset（无 group 则平铺）
         for (const tab of TABS) {
@@ -574,27 +605,30 @@ export class configEdit {
                 continue
             }
             if (tab.id === 'general') {
-                originalNodeAppendChild.call(panel, renderNode({
-                    nodeType: 'label',
-                    className: 'languageLine',
-                    childs: [
-                        '%#language#% ',
-                        {
-                            nodeType: 'input',
-                            className: 'inputRadioLine',
-                            attributes: {
-                                name: 'language',
-                                type: 'text',
-                                value: this.target.language
-                            },
-                            events: {
-                                change: (event: Event) => {
-                                    this.target.language = (event.target as HTMLInputElement).value as Language
+                originalNodeAppendChild.call(
+                    panel,
+                    renderNode({
+                        nodeType: 'label',
+                        className: 'languageLine',
+                        childs: [
+                            '%#language#% ',
+                            {
+                                nodeType: 'input',
+                                className: 'inputRadioLine',
+                                attributes: {
+                                    name: 'language',
+                                    type: 'text',
+                                    value: this.target.language
+                                },
+                                events: {
+                                    change: (event: Event) => {
+                                        this.target.language = (event.target as HTMLInputElement).value as Language
+                                    }
                                 }
                             }
-                        }
-                    ]
-                }))
+                        ]
+                    })
+                )
                 originalNodeAppendChild.call(panel, this.downloadTypeSelect())
             }
             const groups = new Map<string, ConfigField[]>()
@@ -608,19 +642,22 @@ export class configEdit {
             }
             for (const [group, fields] of groups) {
                 if (group === '__flat__') {
-                    fields.forEach(field => originalNodeAppendChild.call(panel, this.renderField(field)))
+                    fields.forEach((field) => originalNodeAppendChild.call(panel, this.renderField(field)))
                 } else {
-                    originalNodeAppendChild.call(panel, renderNode({
-                        nodeType: 'fieldset',
-                        childs: [
-                            {
-                                nodeType: 'div',
-                                className: 'fieldTitle',
-                                childs: `%#${group}Group#%`
-                            },
-                            ...fields.map(field => this.renderField(field))
-                        ]
-                    }))
+                    originalNodeAppendChild.call(
+                        panel,
+                        renderNode({
+                            nodeType: 'fieldset',
+                            childs: [
+                                {
+                                    nodeType: 'div',
+                                    className: 'fieldTitle',
+                                    childs: `%#${group}Group#%`
+                                },
+                                ...fields.map((field) => this.renderField(field))
+                            ]
+                        })
+                    )
                 }
             }
             panel.style.display = this.activeTab === tab.id ? '' : 'none'
@@ -637,11 +674,11 @@ export class configEdit {
 }
 export class menu {
     [key: string | symbol]: any
-    observer!: MutationObserver;
-    pageType!: PageType;
-    interface!: HTMLDivElement;
-    interfacePage!: HTMLUListElement;
-    isTouchDevice!: boolean;
+    observer!: MutationObserver
+    pageType!: PageType
+    interface!: HTMLDivElement
+    interfacePage!: HTMLUListElement
+    isTouchDevice!: boolean
     /** 页面遍历（parseUnlistedAndPrivate）防重入标志 */
     private parseRunning = false
     constructor() {
@@ -669,7 +706,7 @@ export class menu {
         })
 
         // 检测是否为触摸设备（使用 matchMedia 检测 coarse pointer + maxTouchPoints 兜底）
-        body.isTouchDevice = unsafeWindow.matchMedia('(pointer: coarse)').matches || (unsafeWindow.navigator.maxTouchPoints ?? 0) > 0;
+        body.isTouchDevice = unsafeWindow.matchMedia('(pointer: coarse)').matches || (unsafeWindow.navigator.maxTouchPoints ?? 0) > 0
 
         if (config.autoCollapseMenu) {
             if (body.isTouchDevice) {
@@ -677,60 +714,59 @@ export class menu {
                 originalAddEventListener.call(body.interface, 'click', (event: Event) => {
                     // 只响应直接点击菜单容器（非子元素冒泡）
                     if (event.target === body.interface) {
-                        body.interface.classList.toggle('expanded');
+                        body.interface.classList.toggle('expanded')
                     }
-                });
+                })
 
                 // 移动端：点击菜单外部区域时收起菜单
                 originalAddEventListener.call(unsafeWindow.document, 'click', (event: Event) => {
-                    if (body.interface.classList.contains('expanded') &&
-                        !body.interface.contains(event.target as Node)) {
-                        body.interface.classList.remove('expanded');
+                    if (body.interface.classList.contains('expanded') && !body.interface.contains(event.target as Node)) {
+                        body.interface.classList.remove('expanded')
                     }
-                });
+                })
             } else {
                 // 桌面端：保持原有的 hover 行为
-                let mouseoutTimer: number | null = null;
+                let mouseoutTimer: number | null = null
 
                 originalAddEventListener.call(body.interface, 'mouseover', (event: Event) => {
                     if (mouseoutTimer !== null) {
-                        clearTimeout(mouseoutTimer);
-                        mouseoutTimer = null;
+                        clearTimeout(mouseoutTimer)
+                        mouseoutTimer = null
                     }
-                    body.interface.classList.add('expanded');
+                    body.interface.classList.add('expanded')
                 })
 
                 originalAddEventListener.call(body.interface, 'mouseout', (event: Event) => {
-                    const e = event as MouseEvent;
-                    const relatedTarget = e.relatedTarget as Node;
+                    const e = event as MouseEvent
+                    const relatedTarget = e.relatedTarget as Node
 
                     if (relatedTarget && body.interface.contains(relatedTarget)) {
-                        return;
+                        return
                     }
 
                     mouseoutTimer = setTimeout(() => {
-                        body.interface.classList.remove('expanded');
-                        mouseoutTimer = null;
-                    }, 300);
+                        body.interface.classList.remove('expanded')
+                        mouseoutTimer = null
+                    }, 300)
                 })
 
                 originalAddEventListener.call(body.interface, 'click', (event: Event) => {
                     if (event.target === body.interface) {
-                        body.interface.classList.toggle('expanded');
+                        body.interface.classList.toggle('expanded')
                     }
                 })
             }
         } else {
             // 禁用自动收起：菜单始终保持展开
-            body.interface.classList.add('expanded');
+            body.interface.classList.add('expanded')
         }
 
-        body.observer = new MutationObserver(() => body.pageType = getPageType())
+        body.observer = new MutationObserver(() => (body.pageType = getPageType()))
         body.pageType = PageType.Page
         return body
     }
     private button(name: string, click?: (name: string, e: Event) => void) {
-        const self = this;
+        const self = this
         return renderNode({
             nodeType: 'li',
             childs: `%#${name}#%`,
@@ -739,7 +775,7 @@ export class menu {
                     if (!isNullOrUndefined(click)) click(name, event)
                     // 移动端：点击菜单项后自动收起菜单
                     if (self.isTouchDevice && config.autoCollapseMenu) {
-                        setTimeout(() => self.interface.classList.remove('expanded'), 150);
+                        setTimeout(() => self.interface.classList.remove('expanded'), 150)
                     }
                     event.stopPropagation()
                     return false
@@ -750,7 +786,7 @@ export class menu {
 
     /** 将所有按钮追加到菜单（移动已挂载的节点） */
     private appendAll(items: (Element | Node)[]) {
-        items.forEach(i => originalNodeAppendChild.call(this.interfacePage, i))
+        items.forEach((i) => originalNodeAppendChild.call(this.interfacePage, i))
     }
 
     /** 全选/全不选本页复选框 */
@@ -764,7 +800,7 @@ export class menu {
     /** 反选本页复选框 */
     private toggleSelect() {
         unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
-            (element as HTMLInputElement).click()
+            ;(element as HTMLInputElement).click()
         })
     }
 
@@ -775,62 +811,68 @@ export class menu {
         try {
             // 防多页面重入：其他页面正在遍历时静默让位（心跳由 GMLock 内部维护）
             if (!parseUnlistedLock.acquireWithHeartbeat(PARSE_UNLISTED_LOCK, GMLockTTL.BatchTaskSlow)) return
-            if (!await verifyLogin()) return
+            if (!(await verifyLogin())) return
             const lastMonthTimestamp = Date.now() - MONTH_MS
-            const thisMonthUnlistedAndPrivateVideos = await db.getFilteredVideos(lastMonthTimestamp, Infinity);
+            const thisMonthUnlistedAndPrivateVideos = await db.getFilteredVideos(lastMonthTimestamp, Infinity)
             let parseUnlistedAndPrivateVideos: VideoInfo[] = []
 
-            const MAX_FIND_PAGES = site.maxFindPages;
-            let pageCount = 0;
-            log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`);
+            const MAX_FIND_PAGES = site.maxFindPages
+            let pageCount = 0
+            log.debug(`Starting fetch loop. MAX_PAGES=${MAX_FIND_PAGES}`)
 
             while (pageCount < MAX_FIND_PAGES) {
                 // 心跳由 GMLock 内部维护：循环内仅复核持有状态，失去锁立即让位
                 if (!parseUnlistedLock.isHeld(PARSE_UNLISTED_LOCK)) return
-                log.debug(`Fetching page ${pageCount}.`);
+                log.debug(`Fetching page ${pageCount}.`)
                 const response = await unlimitedFetch(
                     `https://${apiEndpoint}/videos?subscribed=true&limit=${site.pageLimit}&rating=${rating()}&page=${pageCount}`,
                     { method: 'GET', headers: await getAuth() },
                     {
                         retry: true,
                         retryDelay: 1000,
-                        onRetry: async () => { await refreshToken() }
+                        onRetry: async () => {
+                            await refreshToken()
+                        }
                     }
-                );
-                log.debug('Received response, parsing JSON.');
-                const data = (await response.json() as Iwara.IPage).results as Iwara.Video[];
-                log.debug(`Page ${pageCount} returned ${data.length} videos.`);
-                data.forEach(info => info.user.following = true);
-                const videoPromises = data.map(info => parseVideoInfo({
-                    Type: 'cache',
-                    ID: info.id,
-                    RAW: info
-                }));
-                log.debug('Initializing VideoInfo promises.');
-                const videoInfos = await Promise.all(videoPromises);
-                parseUnlistedAndPrivateVideos.push(...videoInfos);
-                let test = videoInfos.filter(i => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
-                log.debug('All VideoInfo objects initialized.');
+                )
+                log.debug('Received response, parsing JSON.')
+                const data = ((await response.json()) as Iwara.IPage).results as Iwara.Video[]
+                log.debug(`Page ${pageCount} returned ${data.length} videos.`)
+                data.forEach((info) => (info.user.following = true))
+                const videoPromises = data.map((info) =>
+                    parseVideoInfo({
+                        Type: 'cache',
+                        ID: info.id,
+                        RAW: info
+                    })
+                )
+                log.debug('Initializing VideoInfo promises.')
+                const videoInfos = await Promise.all(videoPromises)
+                parseUnlistedAndPrivateVideos.push(...videoInfos)
+                let test = videoInfos.filter((i) => i.Type === 'partial' && (i.Private || i.Unlisted)).any()
+                log.debug('All VideoInfo objects initialized.')
                 if (test && thisMonthUnlistedAndPrivateVideos.intersect(videoInfos, 'ID').any()) {
-                    log.debug(`Found private video on page ${pageCount}.`);
-                    break;
+                    log.debug(`Found private video on page ${pageCount}.`)
+                    break
                 }
-                log.debug(`Latest private video not found on page ${pageCount}, continuing.`);
-                pageCount++;
+                log.debug(`Latest private video not found on page ${pageCount}, continuing.`)
+                pageCount++
 
-                log.debug(`Incremented page to ${pageCount}, delaying next fetch.`);
-                await delay(100);
+                log.debug(`Incremented page to ${pageCount}, delaying next fetch.`)
+                await delay(100)
             }
-            log.debug('Fetch loop ended. Start updating the database');
-            const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map(v => v.ID));
+            log.debug('Fetch loop ended. Start updating the database')
+            const existingVideos = await db.getVideosByIds(parseUnlistedAndPrivateVideos.map((v) => v.ID))
             const toUpdate = parseUnlistedAndPrivateVideos.difference(
-                existingVideos.filter(v => v.Type === 'full'), 'ID')
+                existingVideos.filter((v) => v.Type === 'full'),
+                'ID'
+            )
             if (toUpdate.any()) {
-                log.debug(`Need to update ${toUpdate.length} pieces of data.`);
+                log.debug(`Need to update ${toUpdate.length} pieces of data.`)
                 await db.bulkPutVideos(toUpdate)
-                log.debug(`Update Completed.`);
+                log.debug(`Update Completed.`)
             } else {
-                log.debug(`No need to update data.`);
+                log.debug(`No need to update data.`)
             }
         } finally {
             parseUnlistedLock.release(PARSE_UNLISTED_LOCK)
@@ -850,30 +892,22 @@ export class menu {
         })
 
         let exportConfigButton = this.button('exportConfig', (name, event) => {
-            GM_setClipboard(stringify(config));
-            newToast(
-                ToastType.Info,
-                {
-                    node: toastNode(i18nList[config.language].exportConfigSucceed),
-                    duration: 3000,
-                    gravity: 'bottom',
-                    position: 'center',
-                    onClick() {
-                        this.hide();
-                    }
+            GM_setClipboard(stringify(config))
+            newToast(ToastType.Info, {
+                node: toastNode(i18nList[config.language].exportConfigSucceed),
+                duration: 3000,
+                gravity: 'bottom',
+                position: 'center',
+                onClick() {
+                    this.hide()
                 }
-            ).show()
+            }).show()
         })
         let importConfigButton = this.button('importConfig', (name, event) => {
             importConfig()
         })
 
-        let baseButtons = [
-            manualDownloadButton,
-            exportConfigButton,
-            importConfigButton,
-            settingsButton
-        ];
+        let baseButtons = [manualDownloadButton, exportConfigButton, importConfigButton, settingsButton]
 
         let injectCheckboxButton = this.button('injectCheckbox', (name, event) => {
             if (unsafeWindow.document.querySelector('.selectButton')) {
@@ -908,14 +942,7 @@ export class menu {
             }).show()
         })
 
-        let selectButtons = [
-            injectCheckboxButton,
-            deselectAllButton,
-            reverseSelectButton,
-            selectThisButton,
-            deselectThisButton,
-            downloadSelectedButton
-        ]
+        let selectButtons = [injectCheckboxButton, deselectAllButton, reverseSelectButton, selectThisButton, deselectThisButton, downloadSelectedButton]
 
         let downloadThisButton = this.button('downloadThis', async (name, event) => {
             let ID = unsafeWindow.location.href.toURL().pathname.split('/')[2]
@@ -937,7 +964,7 @@ export class menu {
             case PageType.History:
             case PageType.Account:
                 this.appendAll([...selectButtons, ...baseButtons])
-                break;
+                break
             case PageType.Page:
             case PageType.Forum:
             case PageType.Image:
@@ -955,19 +982,18 @@ export class menu {
             case PageType.Admin:
             default:
                 this.appendAll(baseButtons)
-                break;
+                break
         }
-
 
         if (config.addUnlistedAndPrivate && !config.filterUnlistedAndPrivate && this.pageType === PageType.VideoList) {
             this.parseUnlistedAndPrivate()
         } else {
-            log.debug('Conditions not met: addUnlistedAndPrivate or pageType mismatch.');
+            log.debug('Conditions not met: addUnlistedAndPrivate or pageType mismatch.')
         }
     }
     public inject() {
         try {
-            this.observer.observe(unsafeWindow.document.getElementById('app')!, { childList: true, subtree: true });
+            this.observer.observe(unsafeWindow.document.getElementById('app')!, { childList: true, subtree: true })
             if (!unsafeWindow.document.querySelector('#pluginMenu')) {
                 originalNodeAppendChild.call(unsafeWindow.document.body, this.interface)
                 this.pageType = getPageType()
@@ -992,11 +1018,7 @@ export class waterMark {
     body = renderNode({
         nodeType: 'p',
         className: 'fixed-bottom-right',
-        childs: [
-            `%#appName#% ${GM_getValue(GM_KEY_VERSION)} `,
-            this.selected,
-            this.debugFlag
-        ],
+        childs: [`%#appName#% ${GM_getValue(GM_KEY_VERSION)} `, this.selected, this.debugFlag],
         events: {
             click: (e: Event) => {
                 if (GM_getValue(GM_KEY_IS_DEBUG)) return

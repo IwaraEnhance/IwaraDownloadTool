@@ -20,7 +20,9 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    transition: transform calc(0.6 * var(--toast-rate) * 1s) ease, opacity calc(0.6 * var(--toast-rate) * 1s) ease;
+    transition:
+        transform calc(0.6 * var(--toast-rate) * 1s) ease,
+        opacity calc(0.6 * var(--toast-rate) * 1s) ease;
 }
 
 .toast-container.toast-top {
@@ -82,7 +84,10 @@
     --toast-translate: 0;
     --toast-scale: 1;
     position: relative;
-    transition: transform calc(0.4s * var(--toast-rate)) cubic-bezier(0.34, 1.56, 0.64, 1), opacity calc(0.3s * var(--toast-rate)) ease, max-height calc(0.3s * var(--toast-rate)) ease;
+    transition:
+        transform calc(0.4s * var(--toast-rate)) cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity calc(0.3s * var(--toast-rate)) ease,
+        max-height calc(0.3s * var(--toast-rate)) ease;
     transform: translate3d(0, var(--toast-translate), 0) scale(var(--toast-scale));
     max-width: 480px;
     max-height: 0px;

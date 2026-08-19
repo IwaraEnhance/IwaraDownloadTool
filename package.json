@@ -1,24 +1,24 @@
 {
-  "name": "iwaradownloadtool",
-  "displayName": "IwaraDownloadTool",
-  "version": "3.3.119",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev:i18n": "node --import tsx/esm --experimental-strip-types ./build/generate-i18n.ts --watch",
-    "test": "node --import tsx/esm --experimental-strip-types ./test/main.ts",
-    "build": "node --import tsx/esm --experimental-strip-types ./build/build.ts",
-    "release": "node --import tsx/esm --experimental-strip-types ./build/release.ts"
-  },
-  "dependencies": {
-    "dayjs": "^1.11.20",
-    "idb": "^8.0.3"
-  },
-  "devDependencies": {
-    "@types/node": "^24.12.2",
-    "@types/tampermonkey": "^5.0.5",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.22.3",
-    "typescript": "^7.0.2"
-  }
+    "name": "iwaradownloadtool",
+    "displayName": "IwaraDownloadTool",
+    "version": "3.3.122",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev:i18n": "node --import tsx/esm --experimental-strip-types ./build/generate-i18n.ts --watch",
+        "test": "node --import tsx/esm --experimental-strip-types ./test/main.ts",
+        "build": "node --import tsx/esm --experimental-strip-types ./build/build.ts",
+        "release": "node --import tsx/esm --experimental-strip-types ./build/release.ts"
+    },
+    "dependencies": {
+        "dayjs": "^1.11.20",
+        "idb": "^8.0.3"
+    },
+    "devDependencies": {
+        "@types/node": "^24.12.2",
+        "@types/tampermonkey": "^5.0.5",
+        "esbuild": "^0.28.1",
+        "tsx": "^4.22.3",
+        "typescript": "^7.0.2"
+    }
 }

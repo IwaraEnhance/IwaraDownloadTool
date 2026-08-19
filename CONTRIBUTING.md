@@ -152,10 +152,17 @@ IwaraDownloadTool/
 2. **运行测试** — `npm test`，失败则终止
 3. **构建编译** — `npm run build`，失败则终止
 4. **升级版本号** — 默认 `patch`，可通过参数指定 `minor`/`major`
-5. **提交并打标签** — `git commit` + `git tag`
+5. **提交并打标签** — `git commit` + `git tag vX.Y.Z`
 6. **推送** — 推送代码及标签到远程
 
 任何步骤失败会自动回滚。
+
+> **发布由版本标签触发**：CI 仅当推送 `vX.Y.Z` 标签时才构建发布。标签指向 dev → 构建预览版（preview）；合并 dev → master 后，将同一标签重新指向 master 合并提交并推送，才构建正式版（latest）：
+>
+> ```bash
+> git checkout master && git pull
+> git tag -f vX.Y.Z && git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z
+> ```
 
 ### 代码规范
 

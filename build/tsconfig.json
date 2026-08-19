@@ -4,12 +4,7 @@
         "noEmit": true,
         "allowImportingTsExtensions": true,
         "module": "ESNext",
-        "types": [
-            "node"
-        ]
+        "types": ["node"]
     },
-    "include": [
-        "./**/*.ts",
-        "../src/types/*.d.ts"
-    ]
+    "include": ["./**/*.ts", "../src/types/*.d.ts"]
 }

@@ -1,60 +1,76 @@
 name: Preview
 on:
   push:
-    branches: 
-      - dev
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
-      - 'src/*'
-      - 'build/*'
-      - 'lib/*'
-      - '.github/workflows/Preview.yml'
+    tags:
+      - "v*"
 env:
-  release_tag: preview 
+  release_tag: preview
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
+  # 判断标签指向：仅当标签指向 dev（不是 master）时才构建预览版
+  check:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      is_preview: ${{ steps.channel.outputs.is_preview }}
+    steps:
+      - name: 拉取最新代码
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: 拉取 master 分支引用
+        run: git fetch origin master
+      - name: 判断标签指向
+        id: channel
+        run: |
+          if git merge-base --is-ancestor ${{ github.sha }} origin/master; then
+            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_preview=true" >> "$GITHUB_OUTPUT"
+          fi
   Release:
+    needs: check
+    if: needs.check.outputs.is_preview == 'true' && github.actor != 'github-actions'
     permissions:
       contents: write
-    if: github.actor != 'github-actions'
     runs-on: ubuntu-latest
     steps:
-    - name: 初始化Node.js环境
-      uses: actions/setup-node@v6
-      with:
-        node-version: 24
-    - name: 拉取最新代码
-      uses: actions/checkout@v6
-      with:
-        ref: dev
-    - name: 安装依赖项
-      run: npm ci
-    - name: 编译
-      run: npm run build ${{ env.release_tag }}
-    - name: 获取编译结果
-      run: |
-        FILES=$(find dist -type f | tr '\n' ' ')
-        echo "file_list=${FILES}" >> $GITHUB_ENV
-    - name: 获取版本号
-      run: |
-        PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
-        echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
-    - run: gh release delete v${{ env.current_version }} --cleanup-tag --yes
-      continue-on-error: true
-    - name: 发布版本存档
-      run: |
-        gh release create v${{ env.current_version }} ${{ env.file_list }} \
-          --target dev \
-          --prerelease \
-          --title "${{ env.current_version }}" \
-          --notes "v${{ env.current_version }} ${{ github.sha }}"
-    - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
-      continue-on-error: true
-    - name: 发布预览版本
-      run: |
-        gh release create ${{ env.release_tag }} ${{ env.file_list }} \
-          --target dev \
-          --prerelease \
-          --title "预览版/Prerelease ${{ env.current_version }}" \
-          --generate-notes
+      - name: 初始化Node.js环境
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: 拉取最新代码
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: 安装依赖项
+        run: npm ci
+      - name: 编译
+        run: npm run build ${{ env.release_tag }}
+      - name: 获取编译结果
+        run: |
+          FILES=$(find dist -type f | tr '\n' ' ')
+          echo "file_list=${FILES}" >> $GITHUB_ENV
+      - name: 获取版本号
+        run: |
+          PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
+          echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
+      # 仅删除同名 Release（保留已推送的标签，避免触发自身导致循环）
+      - run: gh release delete v${{ env.current_version }} --yes
+        continue-on-error: true
+      - name: 发布版本存档（预览）
+        run: |
+          gh release create v${{ env.current_version }} ${{ env.file_list }} \
+            --prerelease \
+            --title "${{ env.current_version }}" \
+            --notes "v${{ env.current_version }} ${{ github.sha }}"
+      # preview 移动标签不匹配 v* 触发器，可安全 cleanup
+      - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
+        continue-on-error: true
+      - name: 发布预览版本
+        run: |
+          gh release create ${{ env.release_tag }} ${{ env.file_list }} \
+            --prerelease \
+            --title "预览版/Prerelease ${{ env.current_version }}" \
+            --generate-notes

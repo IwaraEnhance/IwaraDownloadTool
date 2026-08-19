@@ -1,3 +1,5 @@
 /node_modules
-/temp
 /dist
+/temp
+.DS_Store
+Thumbs.db

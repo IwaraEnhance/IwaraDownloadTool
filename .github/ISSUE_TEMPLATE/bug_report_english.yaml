@@ -75,7 +75,7 @@ body:
       label: What is the download mode?
       options:
         - Aria2
-        - IwaraDownloader
+        - iwaradl
         - Browser
         - Others
     validations:

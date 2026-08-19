@@ -1,49 +1,52 @@
+import './core/mutex'
+import site from './data/site.json'
+import rainbowCSS from './css/rainbow.css'
+import menuCSS from './css/menu.css'
+import configCSS from './css/config.css'
+import overlayCSS from './css/overlay.css'
+import videoCardCSS from './css/videoCard.css'
+import toastCSS from './css/toast.css'
+import beautifyCSS from './css/beautify.css'
+import widescreenCSS from './css/widescreen.css'
+import { isNullOrUndefined, stringify } from './core/env'
+import { createLogger } from './core/log'
+import { i18nList } from './i18n'
+import { config, Config } from './core/config'
+import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from './core/hijack'
+import { Dictionary } from './core/dictionary'
+import { GMSyncDictionary } from './core/gmSyncDictionary'
+import { Version } from './core/version'
+import { db } from './core/db'
+import { runMigrations } from './core/migration'
+import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from './core/constants'
+import { findElement, renderNode, unlimitedFetch } from './core/extension'
+import { check } from './network/envCheck'
+import { getAuth, verifyLogin } from './network/auth'
+import { newToast, toastNode } from './ui/notify'
+import { syncAllVideosPages } from './network/syncPages'
+import { syncCachedToMediaCenter } from './network/mediaCenter'
+import { trackExistingAria2Tasks } from './download/aria2TrackManager'
+import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from './ui/ui'
+import { PageType, ToastType } from './core/enum'
+import { getPageTypeFromPath } from './core/pageType'
+import { createInterceptedFetch } from './network/fetchInterceptor'
 
-import "./core/mutex";
-import site from "./data/site.json";
-import rainbowCSS from "./css/rainbow.css";
-import menuCSS from "./css/menu.css";
-import configCSS from "./css/config.css";
-import overlayCSS from "./css/overlay.css";
-import videoCardCSS from "./css/videoCard.css";
-import toastCSS from "./css/toast.css";
-import beautifyCSS from "./css/beautify.css";
-import widescreenCSS from "./css/widescreen.css"
-import { isNullOrUndefined, stringify } from "./core/env";
-import { createLogger } from "./core/log";
-import { i18nList } from "./i18n";
-import { config, Config } from "./core/config";
-import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from "./core/hijack";
-import { Dictionary, GMSyncDictionary, Version } from "./core/class";
-import { db } from "./core/db";
-import { runMigrations } from "./core/migration";
-import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from "./core/constants";
-import { findElement, renderNode, unlimitedFetch } from "./core/extension";
-import { check } from "./network/envCheck";
-import { getAuth, verifyLogin } from "./network/auth";
-import { newToast, toastNode } from "./ui/notify";
-import { syncAllVideosPages } from "./network/syncPages";
-import { syncCachedToMediaCenter } from "./network/mediaCenter";
-import { trackExistingAria2Tasks } from "./download/aria2TrackManager";
-import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from "./ui/ui";
-import { PageType, ToastType } from "./core/enum";
-import { getPageTypeFromPath } from "./core/pageType";
-import { createInterceptedFetch } from "./network/fetchInterceptor";
-
-const log = createLogger('Main');
+const log = createLogger('Main')
 const hostname = unsafeWindow.location.hostname
 // 从支持域名中匹配注册域名（无需 tldts：对固定域名直接用 hostname 相等/后缀匹配）
-export var domain = site.supportedDomains.find(d => hostname === d || hostname.endsWith('.' + d)) ?? ''
+export var domain = site.supportedDomains.find((d) => hostname === d || hostname.endsWith('.' + d)) ?? ''
 if (!domain) {
-    throw "Not target"
+    throw 'Not target'
 }
 
-
 switch (GM_info.scriptHandler) {
-    case 'Via':
     case 'Tampermonkey':
     case 'ScriptCat':
-        break;
+        break
+    case 'Via':
+        // Via 内置油猴引擎不支持 GM_getTabs/GM_saveTab，且跨页 GM_addValueChangeListener 不可靠，
+        // 会导致跨页同步（selectList/配置/GMLock）静默失效，因此封杀
+        throw `Not support ${GM_info.scriptHandler} (内置油猴引擎不完整，跨页同步不可用)`
     default:
         throw `Not support ${GM_info.scriptHandler}`
 }
@@ -67,7 +70,7 @@ if (GM_getValue(GM_KEY_IS_DEBUG)) {
     unsafeWindow.testGuideOverlay = showGuideOverlay
 }
 
-unsafeWindow.fetch = createInterceptedFetch();
+unsafeWindow.fetch = createInterceptedFetch()
 
 export var apiEndpoint = site.apiEndpoint
 export var rating = () => localStorage.getItem(LS_KEY_RATING) ?? 'all'
@@ -75,27 +78,27 @@ export var rating = () => localStorage.getItem(LS_KEY_RATING) ?? 'all'
 export var selectList = new GMSyncDictionary<VideoInfo>(GM_KEY_SELECT_LIST)
 export var pageSelectButtons = new Dictionary<HTMLInputElement>()
 export var mouseTarget: Element | null = null
-export var pluginMenu = new menu();
-export var editConfig = new configEdit(config);
-export var watermark = new waterMark();
+export var pluginMenu = new menu()
+export var editConfig = new configEdit(config)
+export var watermark = new waterMark()
 
 selectList.onSet = (key) => {
     updateButtonState(key)
     updateSelected()
-};
+}
 selectList.onDel = (key) => {
     updateButtonState(key)
     updateSelected()
-};
+}
 selectList.onSync = () => {
     pageSelectButtons.forEach((value, key) => {
         updateButtonState(key)
     })
     updateSelected()
-};
+}
 
 export function getSelectButton(id: string): HTMLInputElement | undefined {
-    return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement | undefined
+    return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : (unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement | undefined)
 }
 export function getPageType(): PageType {
     // URL 路由来源：browserHistory 走 pathname；hashHistory 走 hash（#/path 或 #!/path）。
@@ -135,7 +138,6 @@ function hijackNodeRemoveChild() {
         uninjectCheckbox(child)
         return originalNodeRemoveChild.apply(this, [child]) as T
     }
-
 }
 function hijackElementRemove() {
     Element.prototype.remove = function () {
@@ -190,52 +192,57 @@ function showGuideOverlay(confirm?: () => void) {
             }
         }
     })
-    originalNodeAppendChild.call(unsafeWindow.document.body, renderNode({
-        nodeType: 'div',
-        attributes: {
-            id: 'pluginOverlay'
-        },
-        childs: [
-            {
-                nodeType: 'div',
-                className: 'main',
-                childs: [
-                    { nodeType: 'p', childs: i18nList[config.language].useHelpForBase },
-                    { nodeType: 'p', childs: '%#useHelpForInjectCheckbox#%' },
-                    { nodeType: 'p', childs: '%#useHelpForCheckDownloadLink#%' },
-                    { nodeType: 'p', childs: i18nList[config.language].useHelpForManualDownload },
-                    { nodeType: 'p', childs: i18nList[config.language].useHelpForBugreport }
-                ]
+    originalNodeAppendChild.call(
+        unsafeWindow.document.body,
+        renderNode({
+            nodeType: 'div',
+            attributes: {
+                id: 'pluginOverlay'
             },
-            {
-                nodeType: 'div',
-                className: 'checkbox-container',
-                childs: {
-                    nodeType: 'label',
-                    className: ['checkbox-label', 'rainbow-text'],
-                    childs: [{
-                        nodeType: 'input',
-                        className: 'checkbox',
-                        attributes: {
-                            type: 'checkbox',
-                            name: 'agree-checkbox'
-                        },
-                        events: {
-                            change: (event: Event) => {
-                                confirmButton.disabled = !(event.target as HTMLInputElement).checked
-                            }
-                        }
-                    }, '%#alreadyKnowHowToUse#%'
+            childs: [
+                {
+                    nodeType: 'div',
+                    className: 'main',
+                    childs: [
+                        { nodeType: 'p', childs: i18nList[config.language].useHelpForBase },
+                        { nodeType: 'p', childs: '%#useHelpForInjectCheckbox#%' },
+                        { nodeType: 'p', childs: '%#useHelpForCheckDownloadLink#%' },
+                        { nodeType: 'p', childs: i18nList[config.language].useHelpForManualDownload },
+                        { nodeType: 'p', childs: i18nList[config.language].useHelpForBugreport }
                     ]
-                }
-            },
-            confirmButton
-        ]
-    }))
+                },
+                {
+                    nodeType: 'div',
+                    className: 'checkbox-container',
+                    childs: {
+                        nodeType: 'label',
+                        className: ['checkbox-label', 'rainbow-text'],
+                        childs: [
+                            {
+                                nodeType: 'input',
+                                className: 'checkbox',
+                                attributes: {
+                                    type: 'checkbox',
+                                    name: 'agree-checkbox'
+                                },
+                                events: {
+                                    change: (event: Event) => {
+                                        confirmButton.disabled = !(event.target as HTMLInputElement).checked
+                                    }
+                                }
+                            },
+                            '%#alreadyKnowHowToUse#%'
+                        ]
+                    }
+                },
+                confirmButton
+            ]
+        })
+    )
 }
 
 function firstRun() {
-    GM_listValues().forEach(i => GM_deleteValue(i))
+    GM_listValues().forEach((i) => GM_deleteValue(i))
     Config.destroyInstance()
     editConfig = new configEdit(config)
     showGuideOverlay(() => {
@@ -245,12 +252,13 @@ function firstRun() {
     })
 }
 async function main() {
-    [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach(css => GM_addStyle(css));
+    ;[rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach((css) => GM_addStyle(css))
 
     // 升级迁移：旧版本数据不兼容时执行清理
     const migration = await runMigrations({ selectList })
-    if (migration === 'failed') return      // 迁移失败：中止启动，版本号未更新，下次启动自动重试
-    if (migration === 'reload') {           // 迁移完成：重载进入正常流程
+    if (migration === 'failed') return // 迁移失败：中止启动，版本号未更新，下次启动自动重试
+    if (migration === 'reload') {
+        // 迁移完成：重载进入正常流程
         unsafeWindow.location.reload()
         return
     }
@@ -266,10 +274,10 @@ async function main() {
 
     config.enableBeautify && GM_addStyle(beautifyCSS)
     config.enableWidescreen && GM_addStyle(widescreenCSS)
-    if (!await check()) {
+    if (!(await check())) {
         newToast(ToastType.Info, {
             text: `%#configError#%`,
-            duration: 60 * 1000,
+            duration: 60 * 1000
         }).show()
         editConfig.inject()
         return
@@ -283,10 +291,10 @@ async function main() {
     hijackHistoryPushState()
     hijackHistoryReplaceState()
     originalAddEventListener('mouseover', (event: Event) => {
-        mouseTarget = (event as MouseEvent).target instanceof Element ? (event as MouseEvent).target as Element : null
+        mouseTarget = (event as MouseEvent).target instanceof Element ? ((event as MouseEvent).target as Element) : null
     })
     originalAddEventListener('keydown', (event: Event) => {
-        const keyboardEvent = event as KeyboardEvent;
+        const keyboardEvent = event as KeyboardEvent
         if (keyboardEvent.code === 'Space' && !isNullOrUndefined(mouseTarget)) {
             let element = findElement(mouseTarget, '.videoTeaser')
             let button = element && (element.matches('.selectButton') ? element : element.querySelector('.selectButton'))
@@ -295,7 +303,7 @@ async function main() {
         }
     })
     new MutationObserver(async (m, o) => {
-        if (m.some(m => m.type === 'childList' && unsafeWindow.document.getElementById('app'))) {
+        if (m.some((m) => m.type === 'childList' && unsafeWindow.document.getElementById('app'))) {
             pluginMenu.inject()
             o.disconnect()
         }
@@ -314,8 +322,8 @@ async function main() {
             if (!localUserRes.ok || !authorProfileRes.ok) {
                 log.warn('登录态验证请求失败:', localUserRes.status, authorProfileRes.status)
             } else {
-                let localUser = (await localUserRes.json() as Iwara.LocalUser).user
-                let authorProfile = (await authorProfileRes.json() as Iwara.Profile).user
+                let localUser = ((await localUserRes.json()) as Iwara.LocalUser).user
+                let authorProfile = ((await authorProfileRes.json()) as Iwara.Profile).user
                 if (localUser.id !== authorProfile.id) {
                     if (!authorProfile.following) {
                         unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/followers`, {
@@ -335,20 +343,17 @@ async function main() {
             log.warn('验证登录态时出错:', error)
         }
     }
-    newToast(
-        ToastType.Info,
-        {
-            node: toastNode(i18nList[config.language].notice),
-            duration: 10000,
-            gravity: 'bottom',
-            position: 'center',
-            onClick() {
-                this.hide();
-            }
+    newToast(ToastType.Info, {
+        node: toastNode(i18nList[config.language].notice),
+        duration: 10000,
+        gravity: 'bottom',
+        position: 'center',
+        onClick() {
+            this.hide()
         }
-    ).show()
+    }).show()
 
     // 启动时接管现有 Aria2 任务的追踪（不阻塞启动流程）
-    trackExistingAria2Tasks();
+    trackExistingAria2Tasks()
 }
-(unsafeWindow.document.body ? Promise.resolve() : new Promise(resolve => originalAddEventListener.call(unsafeWindow.document, "DOMContentLoaded", resolve))).then(main)
+;(unsafeWindow.document.body ? Promise.resolve() : new Promise((resolve) => originalAddEventListener.call(unsafeWindow.document, 'DOMContentLoaded', resolve))).then(main)
