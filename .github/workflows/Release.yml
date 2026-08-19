@@ -1,13 +1,24 @@
 name: Release
 on:
   push:
+    branches:
+      - master
+    # 仅代码相关改动触发（paths 对标签推送不生效，标签推送始终触发）
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "build/**"
+      - ".github/workflows/Release.yml"
     tags:
       - "v*"
 env:
   release_tag: latest
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
-  # 判断标签指向：仅当标签指向 master 时才构建正式版
+  # 判断是否执行正式版流程：
+  # - 标签推送：仅当标签指向 master 时才构建正式版
+  # - master 分支推送（如合并 PR）：直接执行，自动完成正式版
   check:
     permissions:
       contents: read
@@ -21,13 +32,17 @@ jobs:
           fetch-depth: 0
       - name: 拉取 master 分支引用
         run: git fetch origin master
-      - name: 判断标签指向
+      - name: 判断触发类型与标签指向
         id: channel
         run: |
-          if git merge-base --is-ancestor ${{ github.sha }} origin/master; then
-            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            if git merge-base --is-ancestor ${{ github.sha }} origin/master; then
+              echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
           fi
   Release:
     needs: check
@@ -56,6 +71,17 @@ jobs:
         run: |
           PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
           echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
+      # master 分支推送时：确保版本标签 vX.Y.Z 指向 master HEAD 并推送（合并即自动发布）
+      # 该推送由 github-actions 执行，重跑会被 if 守卫跳过，不会循环
+      - name: 确保版本标签指向 master（master 分支推送时）
+        if: github.ref_type == 'branch'
+        run: |
+          if git rev-parse -q --verify "refs/tags/v${current_version}" >/dev/null; then
+            git tag -f "v${current_version}"
+          else
+            git tag "v${current_version}"
+          fi
+          git push origin "refs/tags/v${current_version}" --force
       # 仅删除同名 Release（保留已推送的标签，避免触发自身导致循环）
       - run: gh release delete v${{ env.current_version }} --yes
         continue-on-error: true
