@@ -83,7 +83,9 @@
     "injectCheckbox": "選択ボックスを切り替え",
     "configError": "スクリプト設定にエラーがあります。修正してください。",
     "alreadyKnowHowToUse": "使用方法を理解しました!!!（このページは一度だけ表示されます）",
-    "notice": ["読み込み完了"],
+    "notice": [
+        "読み込み完了"
+    ],
     "useHelpForBase": [
         "使用ガイドをよくお読みください！",
         {
@@ -122,8 +124,8 @@
         }
     ],
     "tryRestartingDownload": "→ ここをクリックしてダウンロードを再開 ←",
-    "tryReparseDownload": "→ ここをクリックして再解析 ←",
-    "openVideoLink": "→ 動画ページへ ←",
+    "tryReparseDownload": "再解析",
+    "openVideoLink": "リンクを開く",
     "copySucceed": "コピー成功！",
     "pushTaskSucceed": "ダウンロードタスクのプッシュ成功！",
     "exportConfig": "設定をエクスポート",
@@ -156,5 +158,9 @@
     "aria2TrackComplete": "ダウンロード完了",
     "aria2TrackRestart": "ダウンロードに失敗しました。自動再開しました",
     "aria2TrackRestartSlow": "ダウンロード速度が遅すぎるため、自動再開しました",
-    "aria2TrackRestartPaused": "タスクが一時停止したため、自動再開しました"
+    "aria2TrackRestartPaused": "タスクが一時停止したため、自動再開しました",
+    "aria2TrackRebuildGiveUp": "8回リトライしても失敗しました。再試行しますか？",
+    "aria2TrackRebuildRetry": "再試行",
+    "aria2TrackRebuildCancel": "キャンセル",
+    "aria2TrackRebuildGiveUpDone": "再試行を中止し、タスクをキューから削除しました"
 }

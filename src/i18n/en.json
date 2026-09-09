@@ -83,7 +83,9 @@
     "injectCheckbox": "Toggle selection box",
     "configError": "There is an error in the script configuration. Please modify.",
     "alreadyKnowHowToUse": "I already know how to use it!!!",
-    "notice": ["Loading Complete"],
+    "notice": [
+        "Loading Complete"
+    ],
     "useHelpForBase": [
         "Please read the usage guide carefully!",
         {
@@ -122,8 +124,8 @@
         }
     ],
     "tryRestartingDownload": "→ Click here to restart download ←",
-    "tryReparseDownload": "→ Click here to reparse ←",
-    "openVideoLink": "→ Visit Video Page ←",
+    "tryReparseDownload": "Reparse",
+    "openVideoLink": "Open link",
     "copySucceed": "Copy succeeded!",
     "pushTaskSucceed": "Task pushed successfully!",
     "exportConfig": "Export Configuration",
@@ -156,5 +158,9 @@
     "aria2TrackComplete": "Download complete",
     "aria2TrackRestart": "Download failed, auto-restarted",
     "aria2TrackRestartSlow": "Download speed too slow, auto-restarted",
-    "aria2TrackRestartPaused": "Task paused, auto-restarted"
+    "aria2TrackRestartPaused": "Task paused, auto-restarted",
+    "aria2TrackRebuildGiveUp": "Failed after 8 retries. Retry or give up?",
+    "aria2TrackRebuildRetry": "Retry",
+    "aria2TrackRebuildCancel": "Cancel",
+    "aria2TrackRebuildGiveUpDone": "Retry abandoned, task removed from queue"
 }

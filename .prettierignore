@@ -1,7 +1,7 @@
 # 依赖与构建产物
 node_modules
 dist
-
+*.json
 # 自动生成的文件（勿手动编辑）
 src/i18n.ts
 package-lock.json

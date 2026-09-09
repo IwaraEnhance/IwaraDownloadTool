@@ -6,6 +6,38 @@
     margin: 0;
 }
 
+.toast .toast-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.toast .toast-buttons button {
+    flex: 1;
+    padding: 6px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    color: #fff;
+    /* 统一默认背景：未指定 className 的按钮（如「重新解析」）不再回退到浏览器默认灰按钮 */
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.toast .toast-buttons button:hover {
+    filter: brightness(1.15);
+}
+
+/* 带 button 以提升特异性（> .toast .toast-buttons button），确保类背景不被基类覆盖 */
+.toast .toast-buttons button.aria2TrackRebuildRetry {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.toast .toast-buttons button.aria2TrackRebuildCancel {
+    background: rgba(0, 0, 0, 0.28);
+}
+
 .offscreen-container {
     position: absolute;
     visibility: hidden;
@@ -84,6 +116,8 @@
     --toast-translate: 0;
     --toast-scale: 1;
     position: relative;
+    user-select: none;
+    -webkit-user-select: none;
     transition:
         transform calc(0.4s * var(--toast-rate)) cubic-bezier(0.34, 1.56, 0.64, 1),
         opacity calc(0.3s * var(--toast-rate)) ease,
@@ -119,11 +153,16 @@
     box-sizing: border-box;
     background: var(--primary);
     color: var(--primary-text);
-    cursor: pointer;
+    cursor: default;
     white-space: normal;
     word-break: break-all;
     overflow: hidden;
     position: relative;
+}
+
+/* 仅绑定了 onClick 的 toast（.toast.clickable）悬停显示手型，其余保持默认箭头 */
+.toast.clickable .toast-content {
+    cursor: pointer;
 }
 
 .toast-progress {

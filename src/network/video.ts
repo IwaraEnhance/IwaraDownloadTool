@@ -71,11 +71,16 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 ).json()) as Iwara.IResult
                 if (isNullOrUndefined(sourceResult.id)) {
                     Type = 'fail'
+                    const Msg = sourceResult.message ?? stringify(sourceResult)
+                    newToast(ToastType.Error, {
+                        node: toastNode(`${info.RAW?.title ?? ID}[${ID}] %#parsingFailed#%`),
+                        buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
+                    }).show()
                     return {
                         ID,
                         Type,
                         RAW,
-                        Msg: sourceResult.message ?? stringify(sourceResult)
+                        Msg
                     }
                 }
                 RAW = sourceResult as Iwara.Video
@@ -94,9 +99,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
     } catch (error) {
         newToast(ToastType.Error, {
             node: toastNode([`${info.RAW?.title}[${ID}] %#parsingFailed#%`], '%#createTask#%'),
-            async onClick() {
-                this.hide()
-            }
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
         }).show()
         Type = 'fail'
         return {
@@ -261,6 +264,11 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
         }
     } catch (error) {
         Type = 'fail'
+        const Msg = stringify(error)
+        newToast(ToastType.Error, {
+            node: toastNode(`${Title ?? ID}[${ID}] %#parsingFailed#%`),
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
+        }).show()
         return {
             Type,
             RAW,
@@ -277,7 +285,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
             ExternalUrl,
             Description,
             Unlisted,
-            Msg: stringify(error)
+            Msg
         }
     }
 }

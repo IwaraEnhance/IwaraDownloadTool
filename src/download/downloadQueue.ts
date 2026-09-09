@@ -238,17 +238,28 @@ async function pushDownloadTaskInner(videoInfo: VideoInfo) {
             return await pushDownloadTaskInner(await parseVideoInfo(videoInfo))
         case 'fail':
             const cache = await db.getVideoById(videoInfo.ID)
+            const externalUrl = videoInfo.External && !isNullOrUndefined(videoInfo.ExternalUrl) && !videoInfo.ExternalUrl.isEmpty() ? videoInfo.ExternalUrl : undefined
             newToast(ToastType.Error, {
                 close: true,
-                node: toastNode([`${videoInfo.Title ?? videoInfo.RAW?.title ?? cache?.RAW?.title}[${videoInfo.ID}] %#parsingFailed#%`, { nodeType: 'br' }, videoInfo.Msg, { nodeType: 'br' }, videoInfo.External ? `%#openVideoLink#%` : `%#tryReparseDownload#%`], '%#createTask#%'),
-                async onClick() {
-                    this.hide()
-                    if (videoInfo.External && !isNullOrUndefined(videoInfo.ExternalUrl) && !videoInfo.ExternalUrl.isEmpty()) {
-                        GM_openInTab(videoInfo.ExternalUrl, { active: false, insert: true, setParent: true })
-                    } else {
-                        await pushDownloadTask(await parseVideoInfo({ Type: 'init', ID: videoInfo.ID, RAW: videoInfo.RAW ?? cache?.RAW }))
-                    }
-                }
+                node: toastNode([`${videoInfo.Title ?? videoInfo.RAW?.title ?? cache?.RAW?.title}[${videoInfo.ID}] %#parsingFailed#%`, { nodeType: 'br' }, videoInfo.Msg], '%#createTask#%'),
+                // 解析失败交互：外部视频→打开链接；否则→重新解析重试
+                buttons: [
+                    isNullOrUndefined(externalUrl)
+                        ? {
+                            text: '%#tryReparseDownload#%',
+                            onClick: async (t) => {
+                                t.hide()
+                                await pushDownloadTask(await parseVideoInfo({ Type: 'init', ID: videoInfo.ID, RAW: videoInfo.RAW ?? cache?.RAW }))
+                            }
+                        }
+                        : {
+                            text: '%#openVideoLink#%',
+                            onClick: (t) => {
+                                t.hide()
+                                GM_openInTab(externalUrl, { active: false, insert: true, setParent: true })
+                            }
+                        }
+                ]
             }).show()
             break
         case 'full':

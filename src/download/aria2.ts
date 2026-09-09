@@ -74,6 +74,7 @@ export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean
     const downloadUrl = buildDownloadUrl(videoInfo)
     const localPath = getDownloadPath(videoInfo)
     const downloadParams = prune({
+        'force-save': true,
         'allow-overwrite': true,
         'all-proxy': config.downloadProxy,
         'all-proxy-passwd': !config.downloadProxy.isEmpty() ? config.downloadProxyPassword : undefined,

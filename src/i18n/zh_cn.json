@@ -83,7 +83,9 @@
     "injectCheckbox": "开关选择框",
     "configError": "脚本配置中存在错误，请修改。",
     "alreadyKnowHowToUse": "我已知晓如何使用!!!（此页面仅显示一次）",
-    "notice": ["加载完成"],
+    "notice": [
+        "加载完成"
+    ],
     "useHelpForBase": [
         "请认真阅读使用指南！",
         {
@@ -122,8 +124,8 @@
         }
     ],
     "tryRestartingDownload": "→ 点击此处重新下载 ←",
-    "tryReparseDownload": "→ 点击此处重新解析 ←",
-    "openVideoLink": "→ 进入视频页面 ←",
+    "tryReparseDownload": "重新解析",
+    "openVideoLink": "打开链接",
     "copySucceed": "复制成功！",
     "pushTaskSucceed": "推送下载任务成功",
     "pushTaskFail": "推送下载任务失败",
@@ -157,5 +159,9 @@
     "aria2TrackComplete": "下载完成",
     "aria2TrackRestart": "下载失败，已自动重启",
     "aria2TrackRestartSlow": "下载速度过慢，已自动重启",
-    "aria2TrackRestartPaused": "任务已暂停，已自动重启"
+    "aria2TrackRestartPaused": "任务已暂停，已自动重启",
+    "aria2TrackRebuildGiveUp": "已连续重试 8 次仍未成功，是否继续重试？",
+    "aria2TrackRebuildRetry": "重试",
+    "aria2TrackRebuildCancel": "取消",
+    "aria2TrackRebuildGiveUpDone": "已放弃重试，任务已从队列移除"
 }

@@ -56,6 +56,15 @@ const delTimeout = (toast: Toast): void => {
         toast.progress.style.animationPlayState = 'paused'
     }
 }
+/** 交互式提示按钮：渲染在 toast 内容下方的一行按钮（与整个 toast 的 onClick 互斥） */
+export interface ToastButton {
+    /** 按钮文本（支持 %#i18nKey#% 占位符，newToast 会替换） */
+    text: string
+    /** 按钮附加类名（用于样式定制） */
+    className?: string
+    /** 点击回调：参数为所属 toast 实例，可调用 hide() 收起 */
+    onClick: (toast: Toast) => void
+}
 export interface ToastOptions {
     id?: string
     root?: Element
@@ -72,6 +81,8 @@ export interface ToastOptions {
     rate?: number
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
+    /** 交互式按钮行（与 onClick 互斥：提供后整个 toast 的 onClick 不生效，点击主体无行为） */
+    buttons?: ToastButton[]
     style?: Partial<CSSStyleDeclaration>
     oldestFirst?: boolean
 }
@@ -90,6 +101,7 @@ interface Options {
     className?: string | string[]
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
+    buttons?: ToastButton[]
     style?: Partial<CSSStyleDeclaration>
 }
 /**
@@ -136,6 +148,11 @@ export class Toast {
             ...options,
             id: this.id
         }
+        // ── 参数互斥 ──
+        // text 与 node 互斥：同时给出时 node 优先，text 忽略
+        if (this.options.text && this.options.node) delete this.options.text
+        // buttons 与 onClick 互斥：提供交互按钮时，整个 toast 的 onClick 不生效（点击主体无行为）
+        if (this.options.buttons && this.options.buttons.length > 0) delete this.options.onClick
         this.root = getContainer(this.options.gravity, this.options.position)
         this.gravity = this.options.gravity
         this.position = this.options.position
@@ -177,6 +194,22 @@ export class Toast {
             this.progress.classList.add('toast-progress')
             this.content.appendChild(this.progress)
         }
+        if (this.options.buttons && this.options.buttons.length > 0) {
+            // 交互式按钮行：渲染在内容末尾，点击按钮阻断冒泡（不触发整个 toast 的 onClick，运行时互斥保证）
+            const buttonsRow = document.createElement('div')
+            buttonsRow.classList.add('toast-buttons')
+            for (const btn of this.options.buttons) {
+                const button = document.createElement('button')
+                button.textContent = btn.text
+                if (btn.className) button.className = btn.className
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    btn.onClick(this)
+                })
+                buttonsRow.appendChild(button)
+            }
+            this.content.appendChild(buttonsRow)
+        }
         this.element.appendChild(this.content)
         return this
     }
@@ -207,7 +240,8 @@ export class Toast {
         return this
     }
     private ensureCloseMethod(): this {
-        if (isNullOrUndefined(this.options.duration) && isNullOrUndefined(this.options.close) && isNullOrUndefined(this.options.onClick)) {
+        // 有交互按钮时不自动补「点击主体隐藏」——按钮已承载交互，点击主体应无行为
+        if (isNullOrUndefined(this.options.duration) && isNullOrUndefined(this.options.close) && isNullOrUndefined(this.options.onClick) && isNullOrUndefined(this.options.buttons)) {
             this.options.onClick = () => this.hide('other')
         }
         return this
@@ -222,6 +256,8 @@ export class Toast {
         if (!isNullOrUndefined(this.options.onClick)) {
             this.clickHandler = this.options.onClick.bind(this)
             this.element.addEventListener('click', this.clickHandler)
+            // 有点击行为的 toast 才显示手型光标（CSS: .toast.clickable .toast-content）
+            this.element.classList.add('clickable')
         }
         return this
     }
@@ -352,7 +388,7 @@ declare global {
 }
 globalThis.Toast = createToast
 globalThis.Toastify = createToast
-;(document.body ?? document.documentElement).appendChild(offscreenContainer)
+    ; (document.body ?? document.documentElement).appendChild(offscreenContainer)
 window.addEventListener(
     'resize',
     debounce(() => {

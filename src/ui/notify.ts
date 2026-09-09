@@ -21,13 +21,13 @@ export function toastNode(body: RenderCode<any>['childs'], title?: string): Elem
         childs: [
             !isNullOrUndefined(title) && !title.isEmpty()
                 ? {
-                      nodeType: 'h3',
-                      childs: `%#appName#% - ${title}`
-                  }
+                    nodeType: 'h3',
+                    childs: `%#appName#% - ${title}`
+                }
                 : {
-                      nodeType: 'h3',
-                      childs: '%#appName#%'
-                  },
+                    nodeType: 'h3',
+                    childs: '%#appName#%'
+                },
             {
                 nodeType: 'p',
                 childs: body
@@ -100,6 +100,10 @@ export function newToast(type: ToastType, params?: ToastOptions): Toast {
     }
     if (!isNullOrUndefined(params.text)) {
         params.text = params.text.replaceVariable(i18nList[config.language]).toString()
+    }
+    // 交互按钮文本支持 %#i18nKey#% 占位符替换
+    if (params.buttons && params.buttons.length > 0) {
+        params.buttons = params.buttons.map((b) => ({ ...b, text: b.text.replaceVariable(i18nList[config.language]).toString() }))
     }
     logFunc((!isNullOrUndefined(params.text) ? params.text : !isNullOrUndefined(params.node) ? getTextNode(params.node) : 'undefined').replaceVariable(i18nList[config.language]))
     return new Toast(params)

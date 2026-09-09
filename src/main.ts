@@ -68,6 +68,8 @@ if (GM_getValue(GM_KEY_IS_DEBUG)) {
     // @ts-ignore
     // 测试引导弹窗（不清空配置，确认后打开配置面板）
     unsafeWindow.testGuideOverlay = showGuideOverlay
+    // @ts-ignore
+    unsafeWindow.debugGMFetch = unlimitedFetch
 }
 
 unsafeWindow.fetch = createInterceptedFetch()
@@ -356,4 +358,4 @@ async function main() {
     // 启动时接管现有 Aria2 任务的追踪（不阻塞启动流程）
     trackExistingAria2Tasks()
 }
-;(unsafeWindow.document.body ? Promise.resolve() : new Promise((resolve) => originalAddEventListener.call(unsafeWindow.document, 'DOMContentLoaded', resolve))).then(main)
+; (unsafeWindow.document.body ? Promise.resolve() : new Promise((resolve) => originalAddEventListener.call(unsafeWindow.document, 'DOMContentLoaded', resolve))).then(main)

@@ -24,9 +24,7 @@ export async function EnvCheck(): Promise<boolean> {
         let toast = newToast(ToastType.Error, {
             node: toastNode([`%#configError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
             position: 'center',
-            onClick() {
-                toast.hide()
-            }
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
         })
         toast.show()
         return false
@@ -58,9 +56,7 @@ export async function localPathCheck(): Promise<boolean> {
         let toast = newToast(ToastType.Error, {
             node: toastNode([`%#downloadPathError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
             position: 'center',
-            onClick() {
-                toast.hide()
-            }
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
         })
         toast.show()
         return false
@@ -97,9 +93,7 @@ export async function aria2Check(): Promise<boolean> {
         let toast = newToast(ToastType.Error, {
             node: toastNode([`Aria2 RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
             position: 'center',
-            onClick() {
-                toast.hide()
-            }
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
         })
         toast.show()
         return false
@@ -132,9 +126,7 @@ export async function iwaradlCheck(): Promise<boolean> {
         newToast(ToastType.Error, {
             node: toastNode([`iwaradl RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
             position: 'center',
-            onClick() {
-                this.hide()
-            }
+            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
         }).show()
         return false
     }
