@@ -1,7 +1,7 @@
 {
     "name": "iwaradownloadtool",
     "displayName": "IwaraDownloadTool",
-    "version": "3.3.123",
+    "version": "3.3.124",
     "private": true,
     "type": "module",
     "scripts": {
