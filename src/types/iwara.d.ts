@@ -24,9 +24,11 @@ declare namespace Iwara {
         following: boolean
         friend: boolean
         premium: boolean
-        locale: null
+        /** 用户界面语言（如 "zh"/"en"），未设置时为 null */
+        locale: string | null
         seenAt: string
-        avatar?: Avatar
+        /** 头像；未上传时为 null */
+        avatar: Avatar | null
         createdAt: string
         updatedAt: string
     }
@@ -49,12 +51,27 @@ declare namespace Iwara {
         id: string
         type: string
     }
-    interface IPage {
+    /** Iwara 官方统一分页响应：所有列表类端点（videos/comments/friends/requests/conversations/notifications 等）
+     * 均返回此同构结构（官方前端 API 层逆向确认），results 类型由端点决定，故参数化 */
+    interface IPage<T = IResult> {
         count: number
         limit: number
         page: number
-        results: IResult[]
+        results: T[]
     }
+
+    /** 好友请求条目（GET /user/:me/friends/requests 返回项，官方前端 chunk-7026 逆向） */
+    interface FriendRequestEntry {
+        id: string
+        createdAt: string
+        /** 发起请求的一方 */
+        user: User
+        /** 接收请求的一方（请求条目归属者） */
+        target: User
+    }
+
+    /** 好友请求列表响应（GET /user/:me/friends/requests，IPage 同构） */
+    interface FriendRequestsPage extends IPage<FriendRequestEntry> { }
 
     interface Playlist extends IResult {
         playlist: {
@@ -107,20 +124,23 @@ declare namespace Iwara {
         id: string
         slug: string
         title: string
-        body: string | undefined
+        /** 视频描述；官方对无描述视频返回 null */
+        body: string | null
         status: string
         rating: string
         private: boolean
         unlisted: boolean
         thumbnail: number
-        embedUrl: string | undefined
+        /** 外链嵌入地址（外站视频）；站内视频为 null */
+        embedUrl: string | null
         liked: boolean
         numLikes: number
         numViews: number
         numComments: number
         file: File
         user: User
-        customThumbnail: any
+        /** 自定义缩略图；未设置时为 null */
+        customThumbnail: File | null
         tags: Tag[]
         fileUrl: string
     }

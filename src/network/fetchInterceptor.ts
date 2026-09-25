@@ -61,8 +61,8 @@ async function handleVideosResponse(response: Response, url: URL): Promise<Respo
     const cloneResponse = response.clone()
     if (!cloneResponse.ok) return response
 
-    const cloneBody = (await cloneResponse.json()) as Iwara.IPage
-    const rawVideos = cloneBody.results as Iwara.Video[]
+    const cloneBody = (await cloneResponse.json()) as Iwara.IPage<Iwara.Video>
+    const rawVideos = cloneBody.results
 
     // 解析视频信息并更新数据库
     const parsePromises = rawVideos.map((info) => parseVideoInfo({ Type: 'cache', ID: info.id, RAW: info }))

@@ -130,7 +130,7 @@
     background: color-mix(in srgb, var(--body) 94%, var(--text));
 }
 
-#pluginConfig fieldset > .fieldTitle {
+#pluginConfig fieldset>.fieldTitle {
     margin: 0 0 6px 0;
     font-size: 12px;
     font-weight: 700;
@@ -151,12 +151,12 @@
     background: none;
 }
 
-#pluginConfig fieldset.downloadType > .fieldTitle {
+#pluginConfig fieldset.downloadType>.fieldTitle {
     width: 100%;
     margin-bottom: 6px;
 }
 
-#pluginConfig fieldset.downloadType > label {
+#pluginConfig fieldset.downloadType>label {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -172,11 +172,11 @@
         color 0.15s;
 }
 
-#pluginConfig fieldset.downloadType > label:hover {
+#pluginConfig fieldset.downloadType>label:hover {
     border-color: var(--primary);
 }
 
-#pluginConfig fieldset.downloadType > label:has(input:checked) {
+#pluginConfig fieldset.downloadType>label:has(input:checked) {
     background: color-mix(in srgb, var(--primary) 16%, transparent);
     border-color: var(--primary);
     color: var(--primary);
@@ -338,6 +338,64 @@
     color: var(--muted);
     margin: 0 0 4px 2px;
     letter-spacing: 0.3px;
+}
+
+/* 好友请求审批条件多选（div.fieldLine.conditionsField：标题在上、胶囊复选列表在下） */
+#pluginConfig .fieldLine.conditionsField {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+#pluginConfig .fieldLine.conditionsField:last-child {
+    border-bottom: none;
+}
+
+#pluginConfig .fieldLine.conditionsField>span {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 6px 2px;
+    letter-spacing: 0.3px;
+}
+
+#pluginConfig .conditionsList {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#pluginConfig .conditionsList .conditionsItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+    border-radius: 14px;
+    cursor: pointer;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+
+#pluginConfig .conditionsList .conditionsItem:hover {
+    border-color: var(--primary);
+}
+
+/* 勾选态高亮（:has 需 Firefox 115+ / Chrome 105+，旧版降级为仅复选框本身高亮） */
+#pluginConfig .conditionsList .conditionsItem:has(input:checked) {
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+#pluginConfig .conditionsList .conditionsItem input[type='checkbox'] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
 }
 
 /* 语言选择行（胶囊一体式：图标 + 文字 + 无边框输入框） */

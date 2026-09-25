@@ -12,15 +12,15 @@ import { newToast, toastNode } from '../ui/notify'
 const log = createLogger('Video')
 import { apiEndpoint } from '../main'
 
-async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage> {
-    return (await (await unlimitedFetch(`https://${apiEndpoint}/video/${id}/comments?page=${page}${!isNullOrUndefined(commentID) && !commentID.isEmpty() ? '&parent=' + commentID : ''}`, { headers: await getAuth() })).json()) as Iwara.IPage
+async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage<Iwara.Comment>> {
+    return (await (await unlimitedFetch(`https://${apiEndpoint}/video/${id}/comments?page=${page}${!isNullOrUndefined(commentID) && !commentID.isEmpty() ? '&parent=' + commentID : ''}`, { headers: await getAuth() })).json()) as Iwara.IPage<Iwara.Comment>
 }
 async function getCommentDatas(id: string, commentID?: string): Promise<Iwara.Comment[]> {
     let comments: Iwara.Comment[] = []
     let base = await getCommentData(id, commentID)
-    comments.push(...(base.results as Iwara.Comment[]))
+    comments.push(...base.results)
     for (let page = 1; page < Math.ceil(base.count / base.limit); page++) {
-        comments.push(...((await getCommentData(id, commentID, page)).results as Iwara.Comment[]))
+        comments.push(...(await getCommentData(id, commentID, page)).results)
     }
     let replies: Iwara.Comment[] = []
     for (let index = 0; index < comments.length; index++) {
@@ -141,7 +141,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
     Unlisted = RAW.unlisted
 
     External = !isNullOrUndefined(RAW.embedUrl) && !RAW.embedUrl.isEmpty()
-    ExternalUrl = RAW.embedUrl
+    ExternalUrl = RAW.embedUrl ?? undefined
 
     if (External) {
         Type = 'fail'
@@ -183,7 +183,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                     await db.deleteFriend(AuthorID)
                 }
 
-                Description = RAW.body
+                Description = RAW.body ?? undefined
                 FileName = RAW.file.name
                 Size = RAW.file.size
                 let VideoFileSource = ((await (await unlimitedFetch(RAW.fileUrl, { headers: await getAuth(RAW.fileUrl) })).json()) as Iwara.Source[]).sort((a, b) => (!isNullOrUndefined(config.priority[b.name]) ? config.priority[b.name] : 0) - (!isNullOrUndefined(config.priority[a.name]) ? config.priority[a.name] : 0))

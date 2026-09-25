@@ -1,0 +1,91 @@
+/* 一键同意好友请求：按钮 + 进度条（/friends/requests 注入） */
+
+/* 标题内部存在注入 host 时才启用 flex 行布局（标题左、按钮最右，与右侧菜单右对齐）。
+   用 :has 驱动而非向官方节点添加 class——官方节点零属性修改，
+   React 重渲染保留 host 子节点时布局不丢，被清除后由 injectionWatcher 补种。 */
+.text--h1:has(> #pluginFriendsApproveHost),
+h1:has(> #pluginFriendsApproveHost),
+h2:has(> #pluginFriendsApproveHost) {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* 宿主：标题行右端 flex 子项，不收缩、不额外间距 */
+#pluginFriendsApproveHost {
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.friendsApproveButton {
+    appearance: none;
+    border: 1px solid color-mix(in srgb, var(--primary, #4f8cff) 55%, transparent);
+    background: color-mix(in srgb, var(--primary, #4f8cff) 16%, transparent);
+    color: var(--text, inherit);
+    border-radius: 8px;
+    padding: 6px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.1s ease;
+}
+
+.friendsApproveButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary, #4f8cff) 30%, transparent);
+    border-color: var(--primary, #4f8cff);
+}
+
+.friendsApproveButton:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+.friendsApproveButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 批准进度条面板（fixed 悬浮，与脚本其他面板层级一致） */
+.friendsApprove {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483644;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 280px;
+    max-width: min(480px, 90vw);
+    padding: 12px 16px;
+    background: var(--body, #1b1b1f);
+    color: var(--text, inherit);
+    border: 1px solid color-mix(in srgb, var(--text, #fff) 14%, transparent);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    font-size: 14px;
+}
+
+.friendsApprove .friendsApproveText {
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.friendsApprove .friendsApproveTrack {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text, #fff) 12%, transparent);
+    overflow: hidden;
+}
+
+.friendsApprove .friendsApproveBar {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary, #4f8cff), color-mix(in srgb, var(--primary, #4f8cff) 60%, #fff));
+    transition: width 0.25s ease;
+}

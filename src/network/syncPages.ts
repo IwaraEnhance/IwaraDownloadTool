@@ -39,8 +39,8 @@ async function fetchAndCachePage(page: number): Promise<true | false | 'last'> {
 
     if (!response.ok) return false
 
-    const pageData = (await response.json()) as Iwara.IPage
-    const rawVideos = pageData.results as Iwara.Video[]
+    const pageData = (await response.json()) as Iwara.IPage<Iwara.Video>
+    const rawVideos = pageData.results
 
     // 判断是否还有下一页
     if (pageData.page * pageData.limit >= pageData.count) return 'last'

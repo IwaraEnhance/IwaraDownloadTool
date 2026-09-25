@@ -318,24 +318,32 @@ async function pushDownloadTaskInner(videoInfo: VideoInfo) {
                 )
             }
             if (pluginMenu.pageType !== PageType.Video && config.checkDownloadLink && checkIsHaveDownloadLink(`${videoInfo.Description} ${videoInfo.Comments}`)) {
-                let toastBody = toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#findedDownloadLink#%`, { nodeType: 'br' }, `%#openVideoLink#%`], '%#createTask#%')
+                // 「打开链接」改为标准交互按钮行（buttons），不再是正文里的伪按钮文本；
+                // buttons 与整块 onClick 互斥（Toastify 保证），主体点击不再触发打开链接
+                const toastBody = toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#findedDownloadLink#%`], '%#createTask#%')
                 newToast(ToastType.Warn, {
                     node: toastBody,
-                    close: config.autoCopySaveFileName,
-                    onClick() {
-                        GM_openInTab(`https://www.${domain}/video/${videoInfo.ID}`, { active: false, insert: true, setParent: true })
-                        if (config.autoCopySaveFileName) {
-                            GM_setClipboard(getDownloadPath(videoInfo).fullName, 'text')
-                            toastBody.appendChild(
-                                renderNode({
-                                    nodeType: 'p',
-                                    childs: '%#copySucceed#%'
-                                })
-                            )
-                        } else {
-                            this.hide()
+                    // 按钮行接管交互后主体点击无行为，必须始终提供 × 关闭，否则无法收起
+                    close: true,
+                    buttons: [
+                        {
+                            text: '%#openVideoLink#%',
+                            onClick: (t) => {
+                                GM_openInTab(`https://www.${domain}/video/${videoInfo.ID}`, { active: false, insert: true, setParent: true })
+                                if (config.autoCopySaveFileName) {
+                                    GM_setClipboard(getDownloadPath(videoInfo).fullName, 'text')
+                                    toastBody.appendChild(
+                                        renderNode({
+                                            nodeType: 'p',
+                                            childs: '%#copySucceed#%'
+                                        })
+                                    )
+                                } else {
+                                    t.hide()
+                                }
+                            }
                         }
-                    }
+                    ]
                 }).show()
                 return
             }

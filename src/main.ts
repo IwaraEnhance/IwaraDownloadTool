@@ -26,10 +26,13 @@ import { newToast, toastNode } from './ui/notify'
 import { syncAllVideosPages } from './network/syncPages'
 import { syncCachedToMediaCenter } from './network/mediaCenter'
 import { trackExistingAria2Tasks } from './download/aria2TrackManager'
+// 导入即完成规则注册（friendRequests.ts 模块顶层向 injectionWatcher 注册），调度器随首个规则启动
+import { injectFriendApproveButton } from './core/friendRequests'
 import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from './ui/ui'
 import { PageType, ToastType } from './core/enum'
 import { getPageTypeFromPath } from './core/pageType'
 import { createInterceptedFetch } from './network/fetchInterceptor'
+import { registerInjectionRule } from './core/injectionWatcher'
 
 const log = createLogger('Main')
 const hostname = unsafeWindow.location.hostname
@@ -110,6 +113,8 @@ export function getPageType(): PageType {
 }
 export function pageChange() {
     pluginMenu.pageType = getPageType()
+    // 好友请求页：开启一键同意时注入按钮（内部自校验页面路径与登录态，重复调用安全）
+    if (config.friendRequestApprove) injectFriendApproveButton()
     log.debug(pageSelectButtons)
 }
 
@@ -254,7 +259,9 @@ function firstRun() {
     })
 }
 async function main() {
-    ;[rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach((css) => GM_addStyle(css))
+    [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach((css) => GM_addStyle(css))
+    // injectionWatcher 已在模块加载阶段启动（friendRequests.ts 顶层注册规则），
+    // document-start 早于站点 React 挂载，调度器从头跟随官方托管树；此处无需额外初始化
 
     // 升级迁移：旧版本数据不兼容时执行清理
     const migration = await runMigrations({ selectList })
@@ -304,12 +311,19 @@ async function main() {
             button && keyboardEvent.preventDefault()
         }
     })
-    new MutationObserver(async (m, o) => {
-        if (m.some((m) => m.type === 'childList' && unsafeWindow.document.getElementById('app'))) {
-            pluginMenu.inject()
-            o.disconnect()
+    // #app 就绪后挂载插件菜单并补发 pageChange（原 #app 闩锁 Observer 迁移为注入规则）。
+    // pageChange 只挂在 pushState/replaceState 劫持上，冷加载永不触发，必须在此补调；
+    // 同时菜单节点若被站点清除，调度器会自动补种（原闩锁 disconnect 后不具备该能力）
+    registerInjectionRule({
+        id: 'pluginMenuShell',
+        isTargetPage: () => true,
+        isReady: () => !isNullOrUndefined(unsafeWindow.document.getElementById('app')),
+        markerSelector: '#pluginMenu',
+        inject: () => {
+            pluginMenu.inject() // menu 内部会 observe #app 驱动 pageType 变化（#app 缺失时 observe 抛错，故由 isReady 保证先行）
+            pageChange() // 冷加载补发：menu.pageChange 与本函数同名不同物，Proxy 仅在 pageType 变化时刷新菜单，不能依赖
         }
-    }).observe(unsafeWindow.document.body, { childList: true, subtree: true })
+    })
 
     if (await verifyLogin(true)) {
         try {

@@ -190,7 +190,8 @@
 
 .toast:hover {
     z-index: 2147483648;
-    --toast-scale: 1.15;
+    /* 悬停放大导致按钮随缩放错位、影响鼠标操作，暂时禁用（保留代码便于恢复） */
+    /* --toast-scale: 1.15; */
 }
 
 .toast-container.toast-left .toast .toast-content .toast-progress {

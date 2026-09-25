@@ -126,12 +126,14 @@ export const renderNode = <T extends keyof HTMLElementTagNameMap>(renderCode: Re
     }
     if (!isNullOrUndefined(attributes) && Object.keys(attributes).length > 0) {
         Object.entries(attributes).forEach(([key, value]) => {
-            node.setAttribute(key, value)
-            ;(node as any)[key] = value
+            node.setAttribute(key, value);
+            (node as any)[key] = value
         })
     }
     if (!isNullOrUndefined(className) && className.length > 0) {
-        node.classList.add(...(typeof className === 'string' ? [className] : className))
+        // 字符串按空白拆分为多个类名，避免误传 'a b' 形式的字符串时 classList.add 抛 DOMException
+        const classes = typeof className === 'string' ? className.split(/\s+/).filter(Boolean) : className
+        node.classList.add(...classes)
     }
     if (!isNullOrUndefined(childs)) {
         node.append(...(isArray(childs) ? childs : [childs]).filter((child) => !isNullOrUndefined(child)).map(renderNode))

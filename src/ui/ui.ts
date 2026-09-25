@@ -9,6 +9,7 @@ import { newToast, toastNode } from './notify'
 import { parseVideoInfo } from '../network/video'
 import { addDownloadTask, analyzeDownloadTask, pushDownloadTask } from '../download/downloadQueue'
 import { importConfig } from './configUi'
+import { BUILTIN_APPROVAL_CONDITIONS, getEnabledApprovalConditionIds, setEnabledApprovalConditionIds } from '../core/friendRequests'
 import { syncCachedToMediaCenter } from '../network/mediaCenter'
 import { originalNodeAppendChild, originalAddEventListener } from '../core/hijack'
 import { createLogger } from '../core/log'
@@ -64,15 +65,15 @@ export async function injectCheckbox(element: Element) {
         className: 'selectButton',
         events: {
             click: (event: Event) => {
-                ;(event.target as HTMLInputElement).checked
+                ; (event.target as HTMLInputElement).checked
                     ? selectList.set(ID, {
-                          Type: 'init',
-                          ID,
-                          Title,
-                          Alias,
-                          Author,
-                          UploadTime
-                      })
+                        Type: 'init',
+                        ID,
+                        Title,
+                        Alias,
+                        Author,
+                        UploadTime
+                    })
                     : selectList.delete(ID)
                 event.stopPropagation()
                 event.stopImmediatePropagation()
@@ -220,7 +221,7 @@ async function isCurrentUserPlaylistOwner(playlistId: string): Promise<boolean> 
  * 显隐联动（dependsOn）均由本表驱动。 */
 interface ConfigField {
     name: string
-    type: 'switch' | 'text' | 'password' | 'number'
+    type: 'switch' | 'text' | 'password' | 'number' | 'conditions'
     /** 该字段出现在哪些标签页 */
     tabs: string[]
     /** 页内分组（同组渲染为一个 fieldset，缺省则直接平铺） */
@@ -283,6 +284,9 @@ const CONFIG_FIELDS: ConfigField[] = [
     { name: 'autoCollapseMenu', type: 'switch', tabs: ['general'], group: 'interface' },
     { name: 'enableWidescreen', type: 'switch', tabs: ['general'], group: 'interface' },
     { name: 'enableBeautify', type: 'switch', tabs: ['general'], group: 'interface' },
+    // 好友请求（/friends/requests 页一键同意：开关 + 审批条件多选，勾选开关后显示条件区）
+    { name: 'friendRequestApprove', type: 'switch', tabs: ['general'], group: 'friendRequest', rerender: true },
+    { name: 'friendRequestApproveConditions', type: 'conditions', tabs: ['general'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
     // 高级页（实验性 / 风险 / 调试）
     { name: 'experimentalFeatures', type: 'switch', tabs: ['advanced'], rerender: true },
     { name: 'enableUnsafeMode', type: 'switch', tabs: ['advanced'] },
@@ -404,18 +408,21 @@ export class configEdit {
             ]
         })
     }
-    /** 按 schema 渲染单个配置项（switch 用开关，其余用输入框，带 help/dependsOn） */
+    /** 按 schema 渲染单个配置项（switch 用开关，其余用输入框，带 help/dependsOn；conditions 用审批条件多选） */
     private renderField(field: ConfigField): Element {
         if (field.type === 'switch') {
             return this.switchButton(field.name, field.get, field.onSet ? (name, e) => field.onSet!(this.target, e) : undefined, field.defaultValue)
         }
+        if (field.type === 'conditions') {
+            return this.approvalConditionsField(field.name, field.dependsOn)
+        }
         const help = field.help
             ? renderNode({
-                  nodeType: 'a',
-                  childs: field.help.text,
-                  className: 'rainbow-text',
-                  attributes: { style: 'float: inline-end;', href: field.help.href }
-              })
+                nodeType: 'a',
+                childs: field.help.text,
+                className: 'rainbow-text',
+                attributes: { style: 'float: inline-end;', href: field.help.href }
+            })
             : undefined
         return this.inputComponent(field.name, field.type, help, undefined, undefined, field.dependsOn)
     }
@@ -486,6 +493,52 @@ export class configEdit {
             ]
         })
     }
+    /** 好友请求审批条件多选框：勾选项写入 GM 存储（跨页同步），多条件 OR 语义（任一满足即批准）。
+     * 全不选时回退为 always（无条件批准），与后端 getEnabledApprovalConditionIds 的缺省一致 */
+    private approvalConditionsField(name: string, dependsOn?: string) {
+        const enabled = getEnabledApprovalConditionIds()
+        return renderNode({
+            nodeType: 'div',
+            // ⚠️ renderNode 的字符串 className 不允许含空格（classList.add 抛 DOMException），多类名必须用数组
+            className: ['fieldLine', 'conditionsField'],
+            attributes: dependsOn ? { 'data-depends-on': dependsOn } : undefined,
+            childs: [
+                {
+                    nodeType: 'span',
+                    childs: `%#${name}#%`
+                },
+                {
+                    nodeType: 'div',
+                    className: 'conditionsList',
+                    childs: BUILTIN_APPROVAL_CONDITIONS.map((condition) =>
+                        renderNode({
+                            nodeType: 'label',
+                            className: 'conditionsItem',
+                            childs: [
+                                {
+                                    nodeType: 'input',
+                                    attributes: {
+                                        type: 'checkbox',
+                                        name: name,
+                                        value: condition.id,
+                                        checked: enabled.includes(condition.id)
+                                    },
+                                    events: {
+                                        change: () => {
+                                            // 从当前 DOM 勾选态重算启用列表（单一事实来源是 DOM）
+                                            const checked = Array.from(this.interface.querySelectorAll<HTMLInputElement>(`.conditionsList input[name=${name}]:checked`)).map((i) => i.value)
+                                            setEnabledApprovalConditionIds(checked.length > 0 ? checked : ['always'])
+                                        }
+                                    }
+                                },
+                                `%#approvalCondition_${condition.id}#%`
+                            ]
+                        })
+                    )
+                }
+            ]
+        })
+    }
     private downloadTypeSelect() {
         return renderNode({
             nodeType: 'fieldset',
@@ -544,6 +597,8 @@ export class configEdit {
             this.renderAllTabs()
             return
         }
+        // conditions 类型（审批条件多选）：值存 GM 存储而非 Config，且多个 input 共享 name，跳过单值同步
+        if (CONFIG_FIELDS.find((field) => field.name === item)?.type === 'conditions') return
         // 普通字段：同步 DOM 值（覆盖互斥联动、跨页远程同步等非事件路径）
         const element = this.interface.querySelector<HTMLInputElement>(`[name=${item}]`)
         if (element) {
@@ -800,7 +855,7 @@ export class menu {
     /** 反选本页复选框 */
     private toggleSelect() {
         unsafeWindow.document.querySelectorAll('.selectButton').forEach((element) => {
-            ;(element as HTMLInputElement).click()
+            ; (element as HTMLInputElement).click()
         })
     }
 
@@ -836,7 +891,7 @@ export class menu {
                     }
                 )
                 log.debug('Received response, parsing JSON.')
-                const data = ((await response.json()) as Iwara.IPage).results as Iwara.Video[]
+                const data = ((await response.json()) as Iwara.IPage<Iwara.Video>).results
                 log.debug(`Page ${pageCount} returned ${data.length} videos.`)
                 data.forEach((info) => (info.user.following = true))
                 const videoPromises = data.map((info) =>

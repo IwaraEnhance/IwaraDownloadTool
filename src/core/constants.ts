@@ -12,6 +12,8 @@ export const GM_KEY_IS_FIRST_RUN = 'isFirstRun'
 export const GM_KEY_VERSION = 'version'
 /** 页面选中视频列表（GMSyncDictionary 键名） */
 export const GM_KEY_SELECT_LIST = 'selectList'
+/** 好友请求一键批准：已启用的审批条件 id 列表（string[]，JSON 存储） */
+export const GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS = 'friendRequestApprovalConditions'
 
 // ── localStorage 键 ──
 /** Iwara 登录令牌（refresh_token） */

@@ -115,6 +115,7 @@ declare interface ImportConfig {
     addUnlistedAndPrivate: boolean
     filterUnlistedAndPrivate: boolean
     autoCollapseMenu: boolean
+    friendRequestApprove: boolean
     downloadPriority: keyof Record<string, number>
     downloadType: DownloadType
     downloadPath: string

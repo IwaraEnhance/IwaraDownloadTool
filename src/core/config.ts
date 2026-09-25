@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: ImportConfig = {
     addUnlistedAndPrivate: false,
     filterUnlistedAndPrivate: false,
     autoCollapseMenu: true,
+    friendRequestApprove: false,
     downloadPriority: 'Source',
     downloadType: DownloadType.Others,
     downloadPath: '/Iwara/%#AUTHOR#%/%#TITLE#%[%#ID#%].mp4',
@@ -61,6 +62,7 @@ export class Config {
     addUnlistedAndPrivate: boolean = DEFAULT_CONFIG.addUnlistedAndPrivate
     filterUnlistedAndPrivate: boolean = DEFAULT_CONFIG.filterUnlistedAndPrivate
     autoCollapseMenu: boolean = DEFAULT_CONFIG.autoCollapseMenu
+    friendRequestApprove: boolean = DEFAULT_CONFIG.friendRequestApprove
     enableUnsafeMode: boolean = DEFAULT_CONFIG.enableUnsafeMode
     enableBeautify: boolean = DEFAULT_CONFIG.enableBeautify
     enableWidescreen: boolean = DEFAULT_CONFIG.enableWidescreen
