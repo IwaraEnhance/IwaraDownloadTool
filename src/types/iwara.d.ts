@@ -52,7 +52,7 @@ declare namespace Iwara {
         type: string
     }
     /** Iwara 官方统一分页响应：所有列表类端点（videos/comments/friends/requests/conversations/notifications 等）
-     * 均返回此同构结构（官方前端 API 层逆向确认），results 类型由端点决定，故参数化 */
+     * 均返回此同构结构，results 类型由端点决定，故参数化 */
     interface IPage<T = IResult> {
         count: number
         limit: number
@@ -60,7 +60,7 @@ declare namespace Iwara {
         results: T[]
     }
 
-    /** 好友请求条目（GET /user/:me/friends/requests 返回项，官方前端 chunk-7026 逆向） */
+    /** 好友请求条目（GET /user/:me/friends/requests 返回项） */
     interface FriendRequestEntry {
         id: string
         createdAt: string

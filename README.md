@@ -9,16 +9,26 @@
 ![GitHub All Releases](https://img.shields.io/github/downloads/IwaraEnhance/IwaraDownloadTool/total)
 
 - 批量下载视频
-- 支持基于Aria2实现的下载器
+- 多下载器支持：Aria2（RPC）、iwaradl（RPC）、浏览器 API 直下、其他（新标签页）
+- Aria2 任务自动追踪：自动接管现有任务、失败/暂停自动恢复、速度过慢自动重启、重复任务自动去重合并
 - 自动检查视频简介以及评论区中是否存在第三方网盘下载连接
-- 自定义保存位置以及文件名 <sup>\*仅支持Aria2、iwaradl，其他下载模式仅支持自定义文件名</sup>
+- 自定义保存位置以及文件名（路径变量 + NFKC 规范化 / Emoji 替换 / 非法字符清理 / 长度截断） <sup>\*完整路径仅支持Aria2、iwaradl，其他下载模式仅支持自定义文件名</sup>
+- 批量选择：视频卡片注入复选框，支持全选/反选/取消、悬浮卡片按空格快选
+- 手动下载：输入单个或 `|` 分隔的多个视频 ID 批量创建任务
 - 自动关注选中的视频作者 <sup>\*默认关闭，需手动开启该功能</sup>
 - 自动点赞/喜欢选中的视频 <sup>\*默认关闭，需手动开启该功能</sup>
 - 不公开和私有视频强制显示 <sup>\*默认关闭，需要关注作者</sup>
-- 过滤订阅页中的不公开和私有视频 <sup>\*默认关闭，与强制显示互斥</sup>
+- 过滤订阅页中的不公开和私有视频（与强制显示互斥）、过滤时间线已喜欢视频 <sup>\*默认关闭</sup>
 - 支持下载私有视频 <sup>\*需要使用已与作者成为好友的账号进行下载</sup>
 - 支持下载隐藏视频 <sup>\*需要知道视频ID</sup>
-- Aria2 任务自动追踪：自动接管现有任务，速度过慢时自动重启
+- 视频元数据自动下载（JSON，与视频同名的 `.json` 文件）<sup>\*默认关闭</sup>
+- MediaCenter 联动 <sup>\*实验性功能，需开启"实验性功能"并配置 API 地址与密钥</sup>
+  - Aria2 下载完成后自动推送元数据到 MediaCenter，失败自动退避重试
+  - 一键同步本地视频缓存到 MediaCenter（自动建立 ID↔MediaCenter ID 双向映射）
+  - 本地数据库导出（videos / follows / friends / idmap 分表 JSON）
+- 好友请求一键批准（`/friends/requests` 页注入按钮，进度条反馈）
+  - 审批条件可配置（OR 语义）：无条件 / 对方已关注我 / 我已关注对方 <sup>\*默认无条件批准，需在设置中开启</sup>
+- 界面自定义：侧边悬浮菜单、美化样式、宽屏适配、多语言（简体中文 / English / 日本語）、配置导入导出
 
 ## 使用说明
 
@@ -44,9 +54,15 @@
 
 前往 [Wiki](https://github.com/IwaraEnhance/IwaraDownloadTool/wiki)
 
+## 数据与隐私
+
+- 视频元数据缓存、关注/好友信息存储在浏览器本地 IndexedDB（库名 `IwaraDownloadTool`），不回传任何第三方
+- 配置与跨页同步状态存放在脚本管理器提供的 GM 存储；登录凭证仅在请求 Iwara API 时使用
+- 脚本会拦截页面 fetch 用于凭证维护与元数据缓存，不收集、不上传任何数据
+
 ## 参与贡献
 
-我们欢迎所有形式的贡献！请查看 [贡献指南](https://github.com/IwaraEnhance/IwaraDownloadTool/blob/master/CONTRIBUTING.md) 了解如何开始。
+我们欢迎所有形式的贡献！请查看 [贡献指南](https://github.com/IwaraEnhance/IwaraDownloadTool/blob/master/CONTRIBUTING.md) 了解如何开始，其中包含本地开发环境、项目结构、构建系统与开发约定。
 
 ## 鸣谢
 

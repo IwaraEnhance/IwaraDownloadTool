@@ -4,7 +4,7 @@ import { PageType } from './enum'
 export type PathPattern = readonly string[]
 
 /**
- * 基于 Iwara 前端 React Router v3 路由表（前端 chunk-9614 提取）的页面类型识别。
+ * 基于 Iwara 前端 React Router v3 路由表参照实现的页面类型识别。
  * URL pathname 按 `/` 切段后与声明式段模式匹配（`:` 前缀为参数段），
  * 相比正则更安全可读：纯字符串比较、无元字符/回溯风险，且与前端路由 path 一一对应。
  * 数组顺序即匹配优先级：论坛线程必须先于版块、`admin` 宽泛匹配先于 `:userId/messages` 兜底。
