@@ -23,11 +23,11 @@
 - 支持下载隐藏视频 <sup>\*需要知道视频ID</sup>
 - 视频元数据自动下载（JSON，与视频同名的 `.json` 文件）<sup>\*默认关闭</sup>
 - MediaCenter 联动 <sup>\*实验性功能，需开启"实验性功能"并配置 API 地址与密钥</sup>
-  - Aria2 下载完成后自动推送元数据到 MediaCenter，失败自动退避重试
-  - 一键同步本地视频缓存到 MediaCenter（自动建立 ID↔MediaCenter ID 双向映射）
-  - 本地数据库导出（videos / follows / friends / idmap 分表 JSON）
+    - Aria2 下载完成后自动推送元数据到 MediaCenter，失败自动退避重试
+    - 一键同步本地视频缓存到 MediaCenter（自动建立 ID↔MediaCenter ID 双向映射）
+    - 本地数据库导出（videos / follows / friends / idmap 分表 JSON）
 - 好友请求一键批准（`/friends/requests` 页注入按钮，进度条反馈）
-  - 审批条件可配置（OR 语义）：无条件 / 对方已关注我 / 我已关注对方 <sup>\*默认无条件批准，需在设置中开启</sup>
+    - 审批条件可配置（OR 语义）：无条件 / 对方已关注我 / 我已关注对方 <sup>\*默认无条件批准，需在设置中开启</sup>
 - 界面自定义：侧边悬浮菜单、美化样式、宽屏适配、多语言（简体中文 / English / 日本語）、配置导入导出
 
 ## 使用说明
