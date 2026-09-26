@@ -89,6 +89,38 @@ testGroup.add(
     })
 )
 
+// 同一 key 携带两种 format 参数（回归：原实现按 key 全局取首个 format，两个占位符都被替换为第一个 format 的结果）
+testGroup.add(
+    new Test('同 key 多 format 参数各归各', 'async', function () {
+        const value = {
+            format(f: string) {
+                return f === 'YYYY' ? '2023' : f === 'HH' ? '12' : f
+            }
+        }
+        const template = '%#v:YYYY#%-%#v:HH#%'
+        const result = template.replaceVariable({ v: value })
+        this.assertEqual(result, '2023-12')
+    })
+)
+
+// 同一 key 的有 format 与无 format 占位符混用（回归：原实现无 format 的出现会被套上首个 format 的结果；
+// 修复后与 Path.resolveValue 语义对齐：无 format → stringify(value)，带 format 方法的对象 JSON 序列化为 "{}"）
+testGroup.add(
+    new Test('同 key 有无 format 混用按各自出现求值', 'async', function () {
+        const value = {
+            format(f: string) {
+                return f === 'YYYY' ? '2023' : f
+            }
+        }
+        this.assertEqual('%#v#%|%#v:YYYY#%'.replaceVariable({ v: value }), '{}|2023')
+        this.assertEqual('%#v:YYYY#%|%#v#%'.replaceVariable({ v: value }), '2023|{}')
+        // 无 format 方法或非对象的值不受影响（Date 走默认 YYYY-MM-DD）
+        this.assertEqual('%#v#%|%#v:YYYY#%'.replaceVariable({ v: 5 }), '5|5')
+        const date = new Date('2023-01-01T12:34:56')
+        this.assertEqual('%#v#%|%#v:HH#%'.replaceVariable({ v: date }), '2023-01-01|12')
+    })
+)
+
 // 循环引用检测测试
 testGroup.add(
     new Test('循环引用检测', 'async', function () {

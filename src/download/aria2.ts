@@ -1,14 +1,19 @@
 import '../core/env'
 import { isNullOrUndefined, prune, stringify, UUID } from '../core/env'
-import { ToastType } from '../core/enum'
 import { config } from '../core/config'
 import { unlimitedFetch } from '../core/extension'
 import { createLogger } from '../core/log'
-import { newToast, toastNode } from '../ui/notify'
-import { analyzeLocalPath, getDownloadPath } from './downloadPath'
-import { buildDownloadUrl, enqueueAria2TrackTask } from './aria2TrackManager'
+import { report, toastNode } from '../core/notify'
+import { analyzeLocalPath, getDownloadPath, buildDownloadUrl } from './downloadPath'
 
 const log = createLogger('Aria2')
+
+/** 任务入队 hook（宿主注入）：新增下载后加入跨页同步队列由管理页面追踪。
+ * 队列入队回调由 main 组装注入。 */
+let enqueueTrackTaskHook: ((videoId: string, gid: string, downloadParams: Record<string, any>) => void) | undefined
+export function setAria2TrackEnqueueHook(hook: (videoId: string, gid: string, downloadParams: Record<string, any>) => void): void {
+    enqueueTrackTaskHook = hook
+}
 
 /**
  * 调用Aria2 RPC API
@@ -71,8 +76,9 @@ export function aria2TaskExtractVideoID(task: Aria2.Status): string | undefined 
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean | undefined = undefined) {
-    const downloadUrl = buildDownloadUrl(videoInfo)
     const localPath = getDownloadPath(videoInfo)
+    // 执行器统一经 buildDownloadUrl 注入 videoid/download 参数（与 others/brower 一致）
+    const downloadUrl = buildDownloadUrl(videoInfo, localPath)
     const downloadParams = prune({
         'force-save': true,
         'allow-overwrite': true,
@@ -87,16 +93,18 @@ export async function aria2Download(videoInfo: FullVideoInfo, overwrite: boolean
     try {
         let res = (await aria2API('aria2.addUri', [[downloadUrl.href], downloadParams])) as Aria2.AuctionResult
         if (res.result.isEmpty()) throw `aria2 下载失败：${stringify(res)}`
-        newToast(ToastType.Info, {
-            gravity: 'bottom',
-            node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
-        }).show()
-        // 加入跨页面同步队列，由唯一的“管理器”页面负责后续追踪
-        enqueueAria2TrackTask(videoInfo.ID, res.result, downloadParams)
+        // 报告经 core/notify 通道（报告展示由 sink 完成，见 main 组装）
+        report('info', {
+            body: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`),
+            gravity: 'bottom'
+        })
+        // 加入跨页面同步队列，由唯一的“管理器”页面负责后续追踪（hook 由 main 注入）
+        enqueueTrackTaskHook?.(videoInfo.ID, res.result, downloadParams)
     } catch (error) {
-        newToast(ToastType.Info, {
-            gravity: 'bottom',
-            node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFail#%`)
-        }).show()
+        // 原行为为 Info 级（2s 自动消失），保持不变
+        report('info', {
+            body: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFail#%`),
+            gravity: 'bottom'
+        })
     }
 }

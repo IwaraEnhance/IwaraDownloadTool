@@ -1,13 +1,23 @@
 import '../core/env'
 import { isArray, isNullOrUndefined, stringify, UUID } from '../core/env'
-import { DownloadType, ToastType } from '../core/enum'
+import { DownloadType } from '../core/enum'
 import { config } from '../core/config'
 import { unlimitedFetch } from '../core/extension'
 import { createLogger } from '../core/log'
-import { newToast, toastNode } from '../ui/notify'
+import { report, toastNode } from '../core/notify'
 import { analyzeLocalPath } from '../download/downloadPath'
 
 const log = createLogger('EnvCheck')
+
+/** check 仅返回 true/false，用户提示统一走 core/notify 通道（sink 由 main 注入） */
+function reportCheckFail(body: Parameters<typeof toastNode>[0], title = '%#settingsCheck#%'): void {
+    report('error', {
+        title,
+        body: toastNode(body, title),
+        position: 'center',
+        close: true
+    })
+}
 
 /**
  * 检查浏览器环境是否支持下载
@@ -21,12 +31,7 @@ export async function EnvCheck(): Promise<boolean> {
             throw new Error('%#browserDownloadModeError#%')
         }
     } catch (error: any) {
-        let toast = newToast(ToastType.Error, {
-            node: toastNode([`%#configError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
-            position: 'center',
-            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
-        })
-        toast.show()
+        reportCheckFail(['%#configError#%', { nodeType: 'br' }, stringify(error)])
         return false
     }
     return true
@@ -53,12 +58,7 @@ export async function localPathCheck(): Promise<boolean> {
         if (isNullOrUndefined(pathTest)) throw 'analyzeLocalPath error'
         if (pathTest.fullPath.isEmpty()) throw 'analyzeLocalPath isEmpty'
     } catch (error: any) {
-        let toast = newToast(ToastType.Error, {
-            node: toastNode([`%#downloadPathError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
-            position: 'center',
-            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
-        })
-        toast.show()
+        reportCheckFail([`%#downloadPathError#%`, { nodeType: 'br' }, stringify(error)])
         return false
     }
     return true
@@ -90,12 +90,7 @@ export async function aria2Check(): Promise<boolean> {
             throw new Error(res.error.message)
         }
     } catch (error: any) {
-        let toast = newToast(ToastType.Error, {
-            node: toastNode([`Aria2 RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
-            position: 'center',
-            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
-        })
-        toast.show()
+        reportCheckFail([`Aria2 RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)])
         return false
     }
     return true
@@ -123,11 +118,7 @@ export async function iwaradlCheck(): Promise<boolean> {
             throw new Error(`后端未启动或无响应`)
         }
     } catch (error: any) {
-        newToast(ToastType.Error, {
-            node: toastNode([`iwaradl RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
-            position: 'center',
-            buttons: [{ text: '%#ok#%', onClick: (t) => t.hide() }]
-        }).show()
+        reportCheckFail([`iwaradl RPC %#connectionTest#%`, { nodeType: 'br' }, stringify(error)])
         return false
     }
     return true

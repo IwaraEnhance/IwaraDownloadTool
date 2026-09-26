@@ -1,6 +1,5 @@
 import './env'
-import { i18nList } from '../i18n'
-import { config } from './config'
+import { resolvePlaceholders } from './i18nRuntime'
 import { originalAddEventListener, originalFetch } from './hijack'
 import { delay, isArray, isNullOrUndefined, prune } from './env'
 import dayjs from 'dayjs'
@@ -47,23 +46,25 @@ function gmFetch(url: string, init: RequestInit): Promise<Response> {
  * @param retryOptions.onRetry - 每次重试前的回调
  * @param retryOptions.onFail - 最终失败时的回调
  */
+export interface FetchRetryOptions {
+    force?: boolean
+    retry?: boolean
+    maxRetries?: number
+    retryDelay?: number
+    successStatus?: number | number[]
+    failStatus?: number | number[]
+    onRetry?: (response: Response) => Promise<void> | void
+    onFail?: (response: Response) => Promise<void> | void
+}
+
 export const unlimitedFetch = async (
-    input: RequestInfo,
+    input: RequestInfo | URL,
     init: RequestInit = {},
-    retryOptions?: {
-        force?: boolean
-        retry?: boolean
-        maxRetries?: number
-        retryDelay?: number
-        successStatus?: number | number[]
-        failStatus?: number | number[]
-        onRetry?: (response: Response) => Promise<void> | void
-        onFail?: (response: Response) => Promise<void> | void
-    }
+    retryOptions?: FetchRetryOptions
 ): Promise<Response> => {
     const { force = false, retry = false, maxRetries = 3, retryDelay = 3000, successStatus = [200, 201], failStatus = [403, 404], onRetry, onFail } = retryOptions ?? {}
 
-    const url = typeof input === 'string' ? input : input.url
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const useGM = force || new URL(url).hostname !== unsafeWindow.location.hostname
     const execFetch = () => (useGM ? gmFetch(url, init) : originalFetch(input, init))
 
@@ -110,7 +111,9 @@ export const renderNode = <T extends keyof HTMLElementTagNameMap>(renderCode: Re
     let code = prune(renderCode)
     if (isNullOrUndefined(code)) throw new Error('RenderCode null')
     if (typeof code === 'string') {
-        return document.createTextNode(code.replaceVariable(i18nList[config.language])) as any
+        // 占位符解析经 i18nRuntime 钩子（bootstrap 注册 i18nList[config.language] 替换），
+        // 基础设施不再反向绑定 i18n/config 单例
+        return document.createTextNode(resolvePlaceholders(code)) as any
     }
     if (renderCode instanceof Node) {
         return code as any

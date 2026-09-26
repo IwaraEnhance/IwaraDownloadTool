@@ -1,4 +1,4 @@
-/* 一键同意好友请求：按钮 + 进度条（/friends/requests 注入） */
+/* 一键审批好友请求：按钮 + 进度条 */
 
 /* 标题内部存在注入 host 时才启用 flex 行布局（标题左、按钮最右，与右侧菜单右对齐）。
    用 :has 驱动而非向官方节点添加 class——官方节点零属性修改，
@@ -46,7 +46,7 @@ h2:has(> #pluginFriendsApproveHost) {
     cursor: not-allowed;
 }
 
-/* 批准进度条面板（fixed 悬浮，与脚本其他面板层级一致） */
+/* 审批进度条面板（fixed 悬浮，与脚本其他面板层级一致） */
 .friendsApprove {
     position: fixed;
     bottom: 24px;

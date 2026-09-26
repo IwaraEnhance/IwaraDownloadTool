@@ -546,14 +546,11 @@ String.prototype.replaceVariable = function (replacements: Record<string, unknow
     prefix = escapeRegex(prefix)
     suffix = escapeRegex(suffix)
     const seen = new Set<string>()
-    const patterns = Object.keys(replacements).map((key) => {
-        const escKey = escapeRegex(key)
-        return {
-            value: replacements[key],
-            placeholderRegex: new RegExp(`${prefix}${escKey}(?=(?::.*?${suffix}|${suffix}))(?::.*?)?${suffix}`, 'gs'),
-            placeholderFormatRegex: new RegExp(`(?<=${prefix}${escKey}(?=(?::.*?${suffix}|${suffix})):).*?(?=${suffix})`, 'gs')
-        }
-    })
+    // 每个 key 一条占位符正则；捕获组 fmt 捕获“该次出现”自身的格式参数
+    const patterns = Object.keys(replacements).map((key) => ({
+        value: replacements[key],
+        placeholderRegex: new RegExp(`${prefix}${escapeRegex(key)}(?=(?::.*?${suffix}|${suffix}))(?::(?<fmt>.*?))?${suffix}`, 'gs')
+    }))
     while (true) {
         if (seen.has(current)) {
             log.warn('检测到循环替换！', `终止于: ${current}`)
@@ -561,15 +558,17 @@ String.prototype.replaceVariable = function (replacements: Record<string, unknow
         }
         seen.add(current)
         let next = current
-        for (const { value, placeholderRegex, placeholderFormatRegex } of patterns) {
-            if (placeholderRegex.test(next)) {
-                let format = next.match(placeholderFormatRegex)
-                if (!isNullOrUndefined(format) && format.any() && !format[0].isEmpty() && hasFunction(value, 'format')) {
-                    next = next.replace(placeholderRegex, stringify(value.format(format[0])))
-                } else {
-                    next = next.replace(placeholderRegex, stringify(value instanceof Date ? value.format('YYYY-MM-DD') : value))
+        for (const { value, placeholderRegex } of patterns) {
+            // 逐次出现替换：每次出现的 format 参数独立解析。原实现整串只取首个 format
+            // （format[0] 全局生效），同一 key 携带不同 format 时全部被首个覆盖
+            // （如 %#T:YYYY#% 与 %#T:HH#%）；无 format 的出现也会被波及。
+            // 函数式替换同时避免替换值中的 $ 序列（$&/$` 等）被二次解释。
+            next = next.replace(placeholderRegex, (match: string, fmt: string | undefined) => {
+                if (!isNullOrUndefined(fmt) && !fmt.isEmpty() && hasFunction(value, 'format')) {
+                    return stringify(value.format(fmt))
                 }
-            }
+                return stringify(value instanceof Date ? value.format('YYYY-MM-DD') : value)
+            })
         }
         if (current === next) break
         current = next

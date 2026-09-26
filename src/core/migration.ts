@@ -1,8 +1,6 @@
 import { Version } from './version'
 import { VersionState } from './enum'
 import { createLogger } from './log'
-import { i18nList } from '../i18n'
-import { config } from './config'
 import { db } from './db'
 import { GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION } from './constants'
 
@@ -12,6 +10,8 @@ const log = createLogger('Migration')
 export interface MigrationDeps {
     /** 页面选择列表（数据结构变更时需清空） */
     selectList: { clear(): void }
+    /** 用户提示器（注入：alert 文案由调用方按 i18n 生成，core 不直接依赖 i18n） */
+    notifyIncompatible?: () => void
 }
 
 export interface Migration {
@@ -66,7 +66,7 @@ export async function runMigrations(deps: MigrationDeps): Promise<MigrationResul
     const pending = migrations.filter(({ from }) => installed.compare(new Version(from)) === VersionState.Low)
     if (pending.length === 0) return 'none'
 
-    alert(i18nList[config.language].configurationIncompatible)
+    deps.notifyIncompatible?.()
     for (const { from, name, run } of pending) {
         try {
             log.info(`migration: ${name} (installed < ${from})`)

@@ -1,280 +1,124 @@
 import './core/mutex'
-import site from './data/site.json'
 import rainbowCSS from './css/rainbow.css'
 import menuCSS from './css/menu.css'
 import configCSS from './css/config.css'
 import overlayCSS from './css/overlay.css'
 import videoCardCSS from './css/videoCard.css'
 import toastCSS from './css/toast.css'
+import friendRequestsCSS from './css/friendRequests.css'
 import beautifyCSS from './css/beautify.css'
 import widescreenCSS from './css/widescreen.css'
-import { isNullOrUndefined, stringify } from './core/env'
-import { createLogger } from './core/log'
+import { isNullOrUndefined } from './core/env'
 import { i18nList } from './i18n'
 import { config, Config } from './core/config'
-import { originalAddEventListener, originalNodeAppendChild, originalHistoryPushState, originalElementRemove, originalNodeRemoveChild, originalHistoryReplaceState, originalStorageSetItem, originalStorageRemoveItem, originalStorageClear } from './core/hijack'
-import { Dictionary } from './core/dictionary'
-import { GMSyncDictionary } from './core/gmSyncDictionary'
-import { Version } from './core/version'
-import { db } from './core/db'
+import { originalAddEventListener } from './core/hijack'
 import { runMigrations } from './core/migration'
-import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_SELECT_LIST, GM_KEY_VERSION, LS_KEY_RATING, LS_KEY_TOKEN } from './core/constants'
-import { findElement, renderNode, unlimitedFetch } from './core/extension'
+import { GM_KEY_IS_DEBUG, GM_KEY_IS_FIRST_RUN, GM_KEY_VERSION } from './core/constants'
+import { setPlaceholderResolver } from './core/i18nRuntime'
+import { setReportSink } from './core/notify'
+import { getPageType } from './core/browserEnv'
+import { installPlatformHooks, onNodeAdded, onNodeRemoved, onHistoryChange } from './core/platformHooks'
+import { on } from './core/events'
+import './context/site' // 环境守卫（domain/scriptHandler：'Not target'/封杀 Via）加载期求值
+import { selectList, pageSelectButtons, getSelectButton, updateButtonState } from './context/selection'
+import { installSelectionShortcuts } from './features/selection'
 import { check } from './network/envCheck'
-import { getAuth, verifyLogin } from './network/auth'
-import { newToast, toastNode } from './ui/notify'
-import { syncAllVideosPages } from './network/syncPages'
-import { syncCachedToMediaCenter } from './network/mediaCenter'
-import { trackExistingAria2Tasks } from './download/aria2TrackManager'
-// 导入即完成规则注册（friendRequests.ts 模块顶层向 injectionWatcher 注册），调度器随首个规则启动
-import { injectFriendApproveButton } from './core/friendRequests'
-import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from './ui/ui'
-import { PageType, ToastType } from './core/enum'
-import { getPageTypeFromPath } from './core/pageType'
+import { verifyLogin } from './network/auth'
 import { createInterceptedFetch } from './network/fetchInterceptor'
+import { newToast, toastNode, reportSinkAdapter } from './ui/notify'
+import { configEdit, injectCheckbox, menu, uninjectCheckbox, waterMark } from './ui/uiCompat'
+import { setupMenuActions, installCheckboxCallbacks } from './ui/setup'
+import { ToastType } from './core/enum'
+import { pushToMediaCenter } from './features/mediaSync'
+import { setMediaCenterPushHook, trackExistingAria2Tasks, enqueueAria2TrackTask } from './features/aria2Track'
+import { pushDownloadTask, setPageTypeProbe } from './features/downloadFlow'
+import { setAria2TrackEnqueueHook } from './download/aria2'
+import { setRetryDownloadHook } from './download/download'
+// 导入即完成规则注册（friend-requests.ts 模块顶层向 injectionWatcher 注册），调度器随首个规则启动
+import { injectFriendApproveButton } from './features/friendRequests'
 import { registerInjectionRule } from './core/injectionWatcher'
+import { firstRun, showGuideOverlay, showNoticeToast, promoteAuthor, setOnboardingActions } from './features/onboarding'
+import { exposeDebugTools } from './features/debugExpose'
 
-const log = createLogger('Main')
-const hostname = unsafeWindow.location.hostname
-// 从支持域名中匹配注册域名（无需 tldts：对固定域名直接用 hostname 相等/后缀匹配）
-export var domain = site.supportedDomains.find((d) => hostname === d || hostname.endsWith('.' + d)) ?? ''
-if (!domain) {
-    throw 'Not target'
+// fetch 拦截器：保持原模块顶层副作用时机（早于站点请求发出）
+unsafeWindow.fetch = createInterceptedFetch()
+
+// ── i18n 钩子：renderNode/newToast 的 %#…#% 解析器由 bootstrap 注册 ──
+setPlaceholderResolver((text) => text.replaceVariable(i18nList[config.language]))
+
+// ── 用户报告通道：core/network/download 层经 core/notify 报告，此处注入 UI 适配 ──
+setReportSink(reportSinkAdapter())
+
+// ── debug 断点 + 工具暴露（features/debugExpose：仅 isDebug，无启动副作用） ──
+if (exposeDebugTools()) debugger
+
+// ── UI 实例组装（openSettings 由构造参数注入） ──
+// configEdit 的保存前环境校验经构造期注入（ui 不 import network）；
+// firstRun 重建 configEdit 实例后 openSettings 闭包经 export var 惰性求值取到新实例（var 提升绑定）
+export var pluginMenu = new menu({ openSettings: () => editConfig.inject() })
+export var editConfig = new configEdit(config, () => check())
+export var watermark = new waterMark()
+setupMenuActions(pluginMenu)
+installCheckboxCallbacks()
+
+// onboarding 不反向 import 组装根：经注入获得"打开配置面板"动作
+setOnboardingActions({ openSettings: () => editConfig.inject() })
+
+// download-flow 判定"非视频页才检查外链"需要页面类型；注入探针避免它反向依赖 UI 层
+setPageTypeProbe(() => pluginMenu.pageType)
+
+// 登录令牌变化 → 菜单刷新（原 hijackStorage 直呼 pageChange 的事件化解耦）
+on('auth:token-changed', () => pluginMenu.pageChange())
+
+// selection 状态变更 → 水印计数 + 复选框态自刷新（原三回调链事件化后的订阅端）
+on('selection:changed', ({ size, videoId }) => {
+    watermark.selected.textContent = ` ${i18nList[config.language].selected} ${size} `
+    if (videoId) {
+        const selectButton = getSelectButton(videoId)
+        if (selectButton) selectButton.checked = selectList.has(videoId)
+    } else {
+        pageSelectButtons.forEach((_, key) => updateButtonState(key))
+    }
+})
+
+// ── 页面切换流水线：平台钩子 → pageType 更新 → 业务订阅 ──
+function pageChange() {
+    pluginMenu.pageType = getPageType()
+    // 好友请求页：开启一键审批时注入按钮（内部自校验页面路径与登录态，重复调用安全）
+    if (config.friendRequestApprove) injectFriendApproveButton()
 }
 
-switch (GM_info.scriptHandler) {
-    case 'Tampermonkey':
-    case 'ScriptCat':
-        break
-    case 'Via':
-        // Via 内置油猴引擎不支持 GM_getTabs/GM_saveTab，且跨页 GM_addValueChangeListener 不可靠，
-        // 会导致跨页同步（selectList/配置/GMLock）静默失效，因此封杀
-        throw `Not support ${GM_info.scriptHandler} (内置油猴引擎不完整，跨页同步不可用)`
-    default:
-        throw `Not support ${GM_info.scriptHandler}`
-}
-
+// ── 首次安装/引导/公告/启动任务已迁 features/onboarding（注入 openSettings 动作，见上方 setOnboardingActions） ──
+// debug 测试钩子依赖 firstRun/showGuideOverlay：保留暴露面，经 onboarding 模块的导出重接
 if (GM_getValue(GM_KEY_IS_DEBUG)) {
-    debugger
-    log.debug(stringify(GM_info))
-    // @ts-ignore
-    unsafeWindow.syncCachedToMediaCenter = syncCachedToMediaCenter
-    // @ts-ignore
-    unsafeWindow.syncAllVideosPages = syncAllVideosPages
-    // @ts-ignore
-    unsafeWindow.exportAllToJsonFiles = db.exportAllToJsonFiles.bind(db)
-    // @ts-ignore
-    unsafeWindow.exportToJsonFiles = db.exportToJsonFiles.bind(db)
     // @ts-ignore
     // 测试首次安装引导弹窗（注意：会清空所有配置并重新显示引导）
-    unsafeWindow.testFirstRun = firstRun
+    unsafeWindow.testFirstRun = () => firstRun(() => editConfig.inject())
     // @ts-ignore
     // 测试引导弹窗（不清空配置，确认后打开配置面板）
     unsafeWindow.testGuideOverlay = showGuideOverlay
-    // @ts-ignore
-    unsafeWindow.debugGMFetch = unlimitedFetch
 }
 
-unsafeWindow.fetch = createInterceptedFetch()
-
-export var apiEndpoint = site.apiEndpoint
-export var rating = () => localStorage.getItem(LS_KEY_RATING) ?? 'all'
-
-export var selectList = new GMSyncDictionary<VideoInfo>(GM_KEY_SELECT_LIST)
-export var pageSelectButtons = new Dictionary<HTMLInputElement>()
-export var mouseTarget: Element | null = null
-export var pluginMenu = new menu()
-export var editConfig = new configEdit(config)
-export var watermark = new waterMark()
-
-selectList.onSet = (key) => {
-    updateButtonState(key)
-    updateSelected()
-}
-selectList.onDel = (key) => {
-    updateButtonState(key)
-    updateSelected()
-}
-selectList.onSync = () => {
-    pageSelectButtons.forEach((value, key) => {
-        updateButtonState(key)
-    })
-    updateSelected()
-}
-
-export function getSelectButton(id: string): HTMLInputElement | undefined {
-    return pageSelectButtons.has(id) ? pageSelectButtons.get(id) : (unsafeWindow.document.querySelector(`input.selectButton[videoid="${id}"]`) as HTMLInputElement | undefined)
-}
-export function getPageType(): PageType {
-    // URL 路由来源：browserHistory 走 pathname；hashHistory 走 hash（#/path 或 #!/path）。
-    // location.pathname 已是浏览器标准 URL 解析结果（不含 query/hash）；hash 需去掉 '#'/'!' 与 query 串。
-    const hashPath = unsafeWindow.location.hash.trimHead('#').trimHead('!').split('?')[0]
-    return getPageTypeFromPath(hashPath || unsafeWindow.location.pathname)
-}
-export function pageChange() {
-    pluginMenu.pageType = getPageType()
-    // 好友请求页：开启一键同意时注入按钮（内部自校验页面路径与登录态，重复调用安全）
-    if (config.friendRequestApprove) injectFriendApproveButton()
-    log.debug(pageSelectButtons)
-}
-
-function updateSelected() {
-    watermark.selected.textContent = ` ${i18nList[config.language].selected} ${selectList.size} `
-}
-
-function updateButtonState(videoID: string) {
-    const selectButton = getSelectButton(videoID)
-    if (selectButton) selectButton.checked = selectList.has(videoID)
-}
-
-function hijackAddEventListener() {
-    unsafeWindow.EventTarget.prototype.addEventListener = function (type, listener, options) {
-        originalAddEventListener.call(this, type, listener, options)
-    }
-}
-function hijackNodeAppendChild() {
-    Node.prototype.appendChild = function <T extends Node>(node: T): T {
-        if (node instanceof HTMLElement && node.classList.contains('videoTeaser')) {
-            injectCheckbox(node)
-        }
-        return originalNodeAppendChild.call(this, node) as T
-    }
-}
-function hijackNodeRemoveChild() {
-    Node.prototype.removeChild = function <T extends Node>(child: T): T {
-        uninjectCheckbox(child)
-        return originalNodeRemoveChild.apply(this, [child]) as T
-    }
-}
-function hijackElementRemove() {
-    Element.prototype.remove = function () {
-        uninjectCheckbox(this)
-        return originalElementRemove.apply(this)
-    }
-}
-function hijackHistoryPushState() {
-    unsafeWindow.history.pushState = function (...args) {
-        originalHistoryPushState.apply(this, args)
-        pageChange()
-    }
-}
-function hijackHistoryReplaceState() {
-    unsafeWindow.history.replaceState = function (...args) {
-        originalHistoryReplaceState.apply(this, args)
-        pageChange()
-    }
-}
-function hijackStorage() {
-    unsafeWindow.Storage.prototype.setItem = function (key, value) {
-        originalStorageSetItem.call(this, key, value)
-        if (key === LS_KEY_TOKEN) pluginMenu.pageChange()
-    }
-    unsafeWindow.Storage.prototype.removeItem = function (key) {
-        originalStorageRemoveItem.call(this, key)
-        if (key === LS_KEY_TOKEN) pluginMenu.pageChange()
-    }
-    unsafeWindow.Storage.prototype.clear = function () {
-        originalStorageClear.call(this)
-        pluginMenu.pageChange()
-    }
-}
-/** 渲染首次安装引导弹窗（不清空配置）。
- * 点击"确定"后：若提供 confirm 回调则调用（首次安装写入标记），否则移除弹窗并打开配置面板（测试用）。 */
-function showGuideOverlay(confirm?: () => void) {
-    let confirmButton = renderNode({
-        nodeType: 'button',
-        attributes: {
-            disabled: true,
-            title: i18nList[config.language].ok
-        },
-        childs: '%#ok#%',
-        events: {
-            click: () => {
-                unsafeWindow.document.querySelector('#pluginOverlay')?.remove()
-                if (confirm) {
-                    confirm()
-                } else {
-                    editConfig.inject()
-                }
-            }
-        }
-    })
-    originalNodeAppendChild.call(
-        unsafeWindow.document.body,
-        renderNode({
-            nodeType: 'div',
-            attributes: {
-                id: 'pluginOverlay'
-            },
-            childs: [
-                {
-                    nodeType: 'div',
-                    className: 'main',
-                    childs: [
-                        { nodeType: 'p', childs: i18nList[config.language].useHelpForBase },
-                        { nodeType: 'p', childs: '%#useHelpForInjectCheckbox#%' },
-                        { nodeType: 'p', childs: '%#useHelpForCheckDownloadLink#%' },
-                        { nodeType: 'p', childs: i18nList[config.language].useHelpForManualDownload },
-                        { nodeType: 'p', childs: i18nList[config.language].useHelpForBugreport }
-                    ]
-                },
-                {
-                    nodeType: 'div',
-                    className: 'checkbox-container',
-                    childs: {
-                        nodeType: 'label',
-                        className: ['checkbox-label', 'rainbow-text'],
-                        childs: [
-                            {
-                                nodeType: 'input',
-                                className: 'checkbox',
-                                attributes: {
-                                    type: 'checkbox',
-                                    name: 'agree-checkbox'
-                                },
-                                events: {
-                                    change: (event: Event) => {
-                                        confirmButton.disabled = !(event.target as HTMLInputElement).checked
-                                    }
-                                }
-                            },
-                            '%#alreadyKnowHowToUse#%'
-                        ]
-                    }
-                },
-                confirmButton
-            ]
-        })
-    )
-}
-
-function firstRun() {
-    GM_listValues().forEach((i) => GM_deleteValue(i))
-    Config.destroyInstance()
-    editConfig = new configEdit(config)
-    showGuideOverlay(() => {
-        GM_setValue(GM_KEY_IS_FIRST_RUN, false)
-        GM_setValue(GM_KEY_VERSION, GM_info.script.version)
-        editConfig.inject()
-    })
-}
+// ── 主流程：顺序即装配顺序 ──
 async function main() {
-    [rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS].forEach((css) => GM_addStyle(css))
-    // injectionWatcher 已在模块加载阶段启动（friendRequests.ts 顶层注册规则），
-    // document-start 早于站点 React 挂载，调度器从头跟随官方托管树；此处无需额外初始化
+    ;[rainbowCSS, menuCSS, configCSS, overlayCSS, videoCardCSS, toastCSS, friendRequestsCSS].forEach((css) => GM_addStyle(css))
+    // injectionWatcher 已在模块加载阶段启动（friend-requests.ts 顶层注册规则），
+    // document-start 早于站点 React 挂载，调度器从头跟随官方托管树
 
-    // 升级迁移：旧版本数据不兼容时执行清理
-    const migration = await runMigrations({ selectList })
+    // 升级迁移：旧版本数据不兼容时执行清理（提示文案由注入回调提供）
+    const migration = await runMigrations({
+        selectList,
+        notifyIncompatible: () => alert(i18nList[config.language].configurationIncompatible)
+    })
     if (migration === 'failed') return // 迁移失败：中止启动，版本号未更新，下次启动自动重试
     if (migration === 'reload') {
-        // 迁移完成：重载进入正常流程
         unsafeWindow.location.reload()
         return
     }
 
-    // 首次安装引导（3.3.0 之前的旧版本由迁移置 isFirstRun=true 触发）
+    // 首次安装引导（3.3.0 之前的旧版本由迁移置 isFirstRun=true 触发）；openSettings 动作注入重建后的面板
     if (GM_getValue(GM_KEY_IS_FIRST_RUN, true)) {
-        firstRun()
+        firstRun(() => editConfig.inject())
         return
     }
 
@@ -292,84 +136,42 @@ async function main() {
         return
     }
 
-    hijackAddEventListener()
-    if (config.autoInjectCheckbox) hijackNodeAppendChild()
-    hijackNodeRemoveChild()
-    hijackElementRemove()
-    hijackStorage()
-    hijackHistoryPushState()
-    hijackHistoryReplaceState()
-    originalAddEventListener('mouseover', (event: Event) => {
-        mouseTarget = (event as MouseEvent).target instanceof Element ? ((event as MouseEvent).target as Element) : null
-    })
-    originalAddEventListener('keydown', (event: Event) => {
-        const keyboardEvent = event as KeyboardEvent
-        if (keyboardEvent.code === 'Space' && !isNullOrUndefined(mouseTarget)) {
-            let element = findElement(mouseTarget, '.videoTeaser')
-            let button = element && (element.matches('.selectButton') ? element : element.querySelector('.selectButton'))
-            button && (button as HTMLInputElement).click()
-            button && keyboardEvent.preventDefault()
-        }
-    })
-    // #app 就绪后挂载插件菜单并补发 pageChange（原 #app 闩锁 Observer 迁移为注入规则）。
-    // pageChange 只挂在 pushState/replaceState 劫持上，冷加载永不触发，必须在此补调；
-    // 同时菜单节点若被站点清除，调度器会自动补种（原闩锁 disconnect 后不具备该能力）
+    // 平台钩子安装与业务订阅
+    installPlatformHooks({ watchNodeAppend: config.autoInjectCheckbox })
+    onNodeAdded((node) => injectCheckbox(node as Element))
+    onNodeRemoved((node) => uninjectCheckbox(node))
+    onHistoryChange(() => pageChange())
+    installSelectionShortcuts()
+
+    // #app 就绪后挂载插件菜单并补发 pageChange（冷加载补发必须显式执行）；
+    // 菜单节点被站点清除时由调度器自动补种
     registerInjectionRule({
         id: 'pluginMenuShell',
         isTargetPage: () => true,
         isReady: () => !isNullOrUndefined(unsafeWindow.document.getElementById('app')),
         markerSelector: '#pluginMenu',
         inject: () => {
-            pluginMenu.inject() // menu 内部会 observe #app 驱动 pageType 变化（#app 缺失时 observe 抛错，故由 isReady 保证先行）
-            pageChange() // 冷加载补发：menu.pageChange 与本函数同名不同物，Proxy 仅在 pageType 变化时刷新菜单，不能依赖
+            pluginMenu.inject() // menu 内部会 observe #app 驱动 pageType 变化
+            pageChange() // 冷加载补发：Proxy 仅在 pageType 变化时刷新菜单，不能依赖
         }
     })
 
+    // MediaCenter 推送 hook：下载完成后由 aria2-track 经此回调进入 feature 层推送
+    // （推送回调由 aria2-track 在下载完成后经运行时注入的 hook 调用）
+    setMediaCenterPushHook(async (videoInfo) => {
+        if (!(await pushToMediaCenter(videoInfo))) throw new Error('MediaCenter push failed')
+    })
+    // Aria2 入队 hook：aria2Download 成功后进入跨页追踪队列（队列在 feature 层）
+    setAria2TrackEnqueueHook((videoId, gid, downloadParams) => enqueueAria2TrackTask(videoId, gid, downloadParams))
+    // browserDownload 失败重试 hook：回调进入 download-flow 的推送编排
+    setRetryDownloadHook((videoInfo) => pushDownloadTask(videoInfo))
+
     if (await verifyLogin(true)) {
-        try {
-            let localUserRes = await unlimitedFetch(`https://${apiEndpoint}/user`, {
-                method: 'GET',
-                headers: await getAuth()
-            })
-            let authorProfileRes = await unlimitedFetch(`https://${apiEndpoint}/profile/dawn`, {
-                method: 'GET',
-                headers: await getAuth()
-            })
-            if (!localUserRes.ok || !authorProfileRes.ok) {
-                log.warn('登录态验证请求失败:', localUserRes.status, authorProfileRes.status)
-            } else {
-                let localUser = ((await localUserRes.json()) as Iwara.LocalUser).user
-                let authorProfile = ((await authorProfileRes.json()) as Iwara.Profile).user
-                if (localUser.id !== authorProfile.id) {
-                    if (!authorProfile.following) {
-                        unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/followers`, {
-                            method: 'POST',
-                            headers: await getAuth()
-                        })
-                    }
-                    if (!authorProfile.friend) {
-                        unlimitedFetch(`https://${apiEndpoint}/user/${authorProfile.id}/friends`, {
-                            method: 'POST',
-                            headers: await getAuth()
-                        })
-                    }
-                }
-            }
-        } catch (error) {
-            log.warn('验证登录态时出错:', error)
-        }
+        await promoteAuthor()
     }
-    newToast(ToastType.Info, {
-        node: toastNode(i18nList[config.language].notice),
-        duration: 10000,
-        gravity: 'bottom',
-        position: 'center',
-        onClick() {
-            this.hide()
-        }
-    }).show()
+    showNoticeToast()
 
     // 启动时接管现有 Aria2 任务的追踪（不阻塞启动流程）
     trackExistingAria2Tasks()
-}
-; (unsafeWindow.document.body ? Promise.resolve() : new Promise((resolve) => originalAddEventListener.call(unsafeWindow.document, 'DOMContentLoaded', resolve))).then(main)
+};
+(unsafeWindow.document.body ? Promise.resolve() : new Promise((resolve) => originalAddEventListener.call(unsafeWindow.document, 'DOMContentLoaded', resolve))).then(main)

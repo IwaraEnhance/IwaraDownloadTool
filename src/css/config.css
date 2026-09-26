@@ -277,11 +277,14 @@
     transform: translateX(20px);
 }
 
-/* 标签页 */
+/* 标签页（单行排布：空间不足时横向滚动而非折行，保持 sticky 底部边线完整）。
+ * 滚动条隐藏：点击自动居中已覆盖导航（无需手动滚动），边缘半截标签即"还有更多"的视觉提示 */
 #pluginConfig .tabs {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: 4px;
     border-bottom: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
     margin-top: 8px;
@@ -292,13 +295,19 @@
     padding-top: 4px;
 }
 
+#pluginConfig .tabs::-webkit-scrollbar {
+    display: none;
+}
+
 #pluginConfig .tabs button {
     background: none;
     color: var(--muted);
     margin: 0;
-    padding: 10px 16px;
+    padding: 10px 12px;
     font-size: 14px;
     font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
     border: none;
     border-bottom: 2px solid transparent;
     border-radius: 0;

@@ -9,15 +9,26 @@ import { Dictionary } from '../core/dictionary'
 import { createLogger } from '../core/log'
 import { db } from '../core/db'
 import { getAuth, refreshToken } from '../network/auth'
+import { followUser, likeVideo } from '../network/interactions'
+import { registerBatchAction } from './selection'
 import { newToast, toastNode } from '../ui/notify'
-import { getDownloadPath } from './downloadPath'
+import { runBatchTask, taskConflict } from './progress'
+import { getDownloadPath } from '../download/downloadPath'
 
 const log = createLogger('DownloadQueue')
 import { parseVideoInfo } from '../network/video'
-import { checkIsHaveDownloadLink } from './linkCheck'
-import { aria2API, aria2Download, aria2TaskExtractVideoID } from './aria2'
-import { browserDownload, browserDownloadMetadata, iwaradlDownload, othersDownload, othersDownloadMetadata } from './download'
-import { apiEndpoint, domain, pluginMenu, selectList } from '../main'
+import { checkIsHaveDownloadLink } from '../download/linkCheck'
+import { aria2API, aria2Download, aria2TaskExtractVideoID } from '../download/aria2'
+import { browserDownload, browserDownloadMetadata, iwaradlDownload, othersDownload, othersDownloadMetadata } from '../download/download'
+import { apiEndpoint, domain } from '../context/site'
+import { selectList } from '../context/selection'
+
+/** 页面类型查询器（宿主注入，避免本模块反向依赖 UI 层的 menu 实例：
+ * 现状仅用于 checkDownloadLink 的“非视频页才检查外链”判定） */
+let getPageTypeProbe: () => PageType = () => PageType.Page
+export function setPageTypeProbe(probe: () => PageType): void {
+    getPageTypeProbe = probe
+}
 
 export async function addDownloadTask() {
     // 防连点叠加多个输入弹窗
@@ -111,94 +122,63 @@ async function downloadTaskUnique(taskList: Dictionary<VideoInfo>) {
 
 /** 解析下载任务防重入标志（循环内每视频有间隔，连点会并发运行多个解析循环） */
 let analyzeDownloadTaskRunning = false
-/** 批量解析下载跨页互斥锁（selectList 跨页同步，多标签页同时批量下载会重复推送任务） */
+/** 批量解析下载跨页互斥锁名（selectList 跨页同步，多标签页同时批量下载会重复推送任务） */
 const ANALYZE_DOWNLOAD_LOCK = 'analyzeDownloadTask'
-const analyzeDownloadLock = new GMLock(UUID())
 
+/** 解析下载的快照交付：BatchAction.run 传入副本快照（隔离解析期间的新勾选）；
+ * 取消选中由 pushDownloadTaskInner 的 full 成功分支直接删真源 selectList 完成，
+ * 无需快照反向同步（fail/toast 拦截路径原版即保留选中，供用户重试后自然删除） */
 export async function analyzeDownloadTask(taskList: Dictionary<VideoInfo> = selectList) {
     if (analyzeDownloadTaskRunning) {
-        newToast(ToastType.Warn, {
-            text: `%#taskInProgress#%`,
-            duration: 3000,
-            close: true,
-            onClick() {
-                this.hide()
-            }
-        }).show()
+        taskConflict()
         return
     }
-    // 跨页互斥：选中列表跨页同步，另一页面正在批量下载时等待其完成（无延迟接管，心跳由锁内部维护）
-    if (!analyzeDownloadLock.acquireWithHeartbeat(ANALYZE_DOWNLOAD_LOCK, GMLockTTL.BatchTask)) {
-        let waitingToast = newToast(ToastType.Info, {
-            text: `%#waitingForLock#%`,
-            duration: -1,
-            close: true,
-            onClick() {
-                this.hide()
-            }
-        })
-        waitingToast.show()
-        if (!(await analyzeDownloadLock.acquireWaitWithHeartbeat(ANALYZE_DOWNLOAD_LOCK, GMLockTTL.BatchTask))) {
-            waitingToast.hide()
-            return
-        }
-        waitingToast.hide()
-    }
+    log.debug(`[时序] analyze start: size=${taskList.size}, isSnapshot=${taskList !== selectList}`)
     analyzeDownloadTaskRunning = true
     try {
-        let size = taskList.size
-        let node = renderNode({
-            nodeType: 'p',
-            childs: `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
-        })
+        // 批量作业模板：锁获取/心跳/等待提示/释放全部内聚，
+        // 失去锁时 runner 静默退出（与原 isHeld 失败路径的提示差异见下）
+        await runBatchTask<void>({
+            lockName: ANALYZE_DOWNLOAD_LOCK,
+            ttl: GMLockTTL.BatchTask,
+            onConflict: 'wait',
+            iterate: async (ctl) => {
+                const size = taskList.size
+                let done = 0
+                const progressText = () => `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}] `
+                ctl.progress(progressText())
+                if (config.experimentalFeatures && config.downloadType === DownloadType.Aria2) {
+                    await downloadTaskUnique(taskList)
+                    ctl.progress(progressText())
+                }
 
-        let parsingProgressToast = newToast(ToastType.Info, {
-            node: node,
-            duration: -1
-        })
+                for (const [id, info] of taskList) {
+                    // 心跳由 GMLock 内部维护：循环内仅复核持有状态，失去锁立即让位
+                    if (!ctl.isHeld()) {
+                        taskConflict()
+                        return
+                    }
+                    await pushDownloadTask(await parseVideoInfo(info))
+                    taskList.delete(id)
+                    done++
+                    ctl.progress(progressText())
+                    ctl.progressRatio(1 - taskList.size / size, 1)
+                    !config.enableUnsafeMode && (await delay(3000))
+                }
 
-        function updateParsingProgress() {
-            node.firstChild!.textContent = `${i18nList[config.language].parsingProgress}[${taskList.size}/${size}]`
-        }
-
-        parsingProgressToast.show()
-        if (config.experimentalFeatures && config.downloadType === DownloadType.Aria2) {
-            await downloadTaskUnique(taskList)
-            updateParsingProgress()
-        }
-
-        for (let [id, info] of taskList) {
-            // 心跳由 GMLock 内部维护：循环内仅复核持有状态，失去锁立即让位
-            if (!analyzeDownloadLock.isHeld(ANALYZE_DOWNLOAD_LOCK)) {
-                parsingProgressToast.hide()
-                newToast(ToastType.Warn, {
-                    text: `%#taskInProgress#%`,
-                    duration: 3000,
+                log.debug(`[时序] analyze end, taskList.remain=${taskList.size}, selectList.size=${selectList.size}`)
+                newToast(ToastType.Info, {
+                    text: `%#allCompleted#%`,
+                    duration: -1,
                     close: true,
                     onClick() {
                         this.hide()
                     }
                 }).show()
-                return
             }
-            await pushDownloadTask(await parseVideoInfo(info))
-            taskList.delete(id)
-            updateParsingProgress()
-            !config.enableUnsafeMode && (await delay(3000))
-        }
-
-        parsingProgressToast.hide()
-        newToast(ToastType.Info, {
-            text: `%#allCompleted#%`,
-            duration: -1,
-            close: true,
-            onClick() {
-                this.hide()
-            }
-        }).show()
+        })
     } finally {
         analyzeDownloadTaskRunning = false
-        analyzeDownloadLock.release(ANALYZE_DOWNLOAD_LOCK)
     }
 }
 
@@ -266,58 +246,29 @@ async function pushDownloadTaskInner(videoInfo: VideoInfo) {
             await db.putVideo(videoInfo)
             const authorInfo = await db.getFollowById(videoInfo.AuthorID)
             if (config.autoFollow && (!authorInfo?.following || !videoInfo.Following)) {
-                await unlimitedFetch(
-                    `https://${apiEndpoint}/user/${videoInfo.AuthorID}/followers`,
-                    {
-                        method: 'POST',
-                        headers: await getAuth()
-                    },
-                    {
-                        retry: true,
-                        successStatus: 201,
-                        failStatus: [404],
-                        onFail: async (res) => {
-                            newToast(ToastType.Warn, {
-                                text: `${videoInfo.Alias} %#autoFollowFailed#% ${res.status}`,
-                                close: true,
-                                onClick() {
-                                    this.hide()
-                                }
-                            }).show()
-                        },
-                        onRetry: async () => {
-                            await refreshToken()
+                // 社交互动经 network/interactions 客户端；失败提示保留原语义
+                if (!(await followUser(videoInfo.AuthorID).catch(() => false))) {
+                    newToast(ToastType.Warn, {
+                        text: `${videoInfo.Alias} %#autoFollowFailed#%`,
+                        close: true,
+                        onClick() {
+                            this.hide()
                         }
-                    }
-                )
+                    }).show()
+                }
             }
             if (config.autoLike && !videoInfo.Liked) {
-                await unlimitedFetch(
-                    `https://${apiEndpoint}/video/${videoInfo.ID}/like`,
-                    {
-                        method: 'POST',
-                        headers: await getAuth()
-                    },
-                    {
-                        retry: true,
-                        successStatus: 201,
-                        failStatus: [404],
-                        onFail: async (res) => {
-                            newToast(ToastType.Warn, {
-                                text: `${videoInfo.Alias} %#autoLikeFailed#% ${res.status}`,
-                                close: true,
-                                onClick() {
-                                    this.hide()
-                                }
-                            }).show()
-                        },
-                        onRetry: async () => {
-                            await refreshToken()
+                if (!(await likeVideo(videoInfo.ID).catch(() => false))) {
+                    newToast(ToastType.Warn, {
+                        text: `${videoInfo.Alias} %#autoLikeFailed#%`,
+                        close: true,
+                        onClick() {
+                            this.hide()
                         }
-                    }
-                )
+                    }).show()
+                }
             }
-            if (pluginMenu.pageType !== PageType.Video && config.checkDownloadLink && checkIsHaveDownloadLink(`${videoInfo.Description} ${videoInfo.Comments}`)) {
+            if (getPageTypeProbe() !== PageType.Video && config.checkDownloadLink && checkIsHaveDownloadLink(`${videoInfo.Description} ${videoInfo.Comments}`)) {
                 // 「打开链接」改为标准交互按钮行（buttons），不再是正文里的伪按钮文本；
                 // buttons 与整块 onClick 互斥（Toastify 保证），主体点击不再触发打开链接
                 const toastBody = toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#findedDownloadLink#%`], '%#createTask#%')
@@ -392,3 +343,12 @@ async function pushDownloadTaskInner(videoInfo: VideoInfo) {
             break
     }
 }
+
+// ── 批量动作注册：下载作为 selection 批量操作体系的第一个注册消费者 ──
+// 直接传活引用（默认参数 = selectList）：downloadTaskUnique 去重与 full 分支的删除
+// 都写透真源，取消选中行为与原版一致（快照交付会写透断裂 → 已去重项残留选中）
+registerBatchAction({
+    id: 'downloadSelected',
+    labelKey: 'downloadSelected',
+    run: () => analyzeDownloadTask()
+})

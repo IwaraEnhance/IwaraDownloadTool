@@ -14,6 +14,10 @@ export const GM_KEY_VERSION = 'version'
 export const GM_KEY_SELECT_LIST = 'selectList'
 /** 好友请求一键批准：已启用的审批条件 id 列表（string[]，JSON 存储） */
 export const GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS = 'friendRequestApprovalConditions'
+/** 好友请求一键批准：条件组合模式（any=任一满足即批准 / all=全部满足才批准） */
+export const GM_KEY_FRIEND_REQUEST_APPROVAL_MODE = 'friendRequestApprovalMode'
+/** 审批条件 commentedForumThread 的证据源：指定论坛帖 ID（用户在配置中填写） */
+export const GM_KEY_APPROVE_EVIDENCE_THREAD = 'friendApproveEvidenceThreadId'
 
 // ── localStorage 键 ──
 /** Iwara 登录令牌（refresh_token） */

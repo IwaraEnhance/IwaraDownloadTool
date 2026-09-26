@@ -116,6 +116,9 @@ declare interface ImportConfig {
     filterUnlistedAndPrivate: boolean
     autoCollapseMenu: boolean
     friendRequestApprove: boolean
+    /** 论坛帖证据帖 ID（审批条件 commentedForumThread 的证据源） */
+    friendApproveEvidenceThreadId: string
+    promoteScriptAuthor: boolean
     downloadPriority: keyof Record<string, number>
     downloadType: DownloadType
     downloadPath: string

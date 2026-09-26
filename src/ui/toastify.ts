@@ -33,7 +33,7 @@ const addTimeout = (toast: Toast, callback: () => void): void => {
     }, duration)
     toastTimeouts.set(toast, timeoutId)
 
-    if (!toast.showProgress) return
+    if (!toast.showProgress || !isNullOrUndefined(toast.ratioProgress)) return
     if (isNullOrUndefined(toast.progress)) return
     // 进度条由纯 CSS animation 驱动（替代 20ms setInterval 写 CSS 变量）
     // duration 变化或重新计时（mouseleave 恢复）时：移除动画 + 强制 reflow 后恢复，从头播放
@@ -50,7 +50,7 @@ const delTimeout = (toast: Toast): void => {
         clearTimeout(timeoutId)
         toastTimeouts.delete(toast)
     }
-    if (!toast.showProgress) return
+    if (!toast.showProgress || !isNullOrUndefined(toast.ratioProgress)) return
     // 暂停进度条动画（mouseover 暂停 / hide 时停止，不再需要 interval）
     if (!isNullOrUndefined(toast.progress)) {
         toast.progress.style.animationPlayState = 'paused'
@@ -77,8 +77,14 @@ export interface ToastOptions {
     className?: string | string[]
     stopOnFocus?: boolean
     showProgress?: boolean
+    /**
+     * 确定性进度条（0~1）：按任务完成占比直接渲染 scaleX，不经倒计时动画。
+     * 与 showProgress（倒计时进度条）互斥：提供 progressRatio 时机型为任务进度。
+     * 后续更新经 Toast.setProgressRatio(ratio) 原地刷新。*/
+    progressRatio?: number
     /** 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的淡入淡出时长 */
     rate?: number
+    /** 余字段同前 */
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
     /** 交互式按钮行（与 onClick 互斥：提供后整个 toast 的 onClick 不生效，点击主体无行为） */
@@ -93,6 +99,8 @@ interface Options {
     stopOnFocus: boolean
     oldestFirst: boolean
     showProgress: boolean
+    /** 确定性进度条（0~1）；与 showProgress（倒计时型）互斥 */
+    progressRatio?: number
     rate: number
     text?: string
     node?: Node
@@ -127,6 +135,10 @@ export class Toast {
     public oldestFirst: boolean
     public stopOnFocus: boolean
     public showProgress: boolean
+    /** 确定性进度条（progressRatio 型）：setProgressRatio 原地刷新 scaleX */
+    public ratioProgress?: HTMLDivElement
+    /** 当前确定性进度值（undefined = 非任务进度型） */
+    private progressRatioValue?: number
     public content?: HTMLDivElement
     public progress?: HTMLDivElement
     private mouseOverHandler?: () => void
@@ -194,6 +206,13 @@ export class Toast {
             this.progress.classList.add('toast-progress')
             this.content.appendChild(this.progress)
         }
+        if (this.options.progressRatio !== undefined) {
+            this.ratioProgress = document.createElement('div')
+            this.ratioProgress.classList.add('toast-progress')
+            this.ratioProgress.style.animation = 'none' // 任务进度型不经倒计时动画（scaleX 由 setProgressRatio 直接控制）
+            this.content.appendChild(this.ratioProgress)
+            this.setProgressRatio(this.options.progressRatio)
+        }
         if (this.options.buttons && this.options.buttons.length > 0) {
             // 交互式按钮行：渲染在内容末尾，点击按钮阻断冒泡（不触发整个 toast 的 onClick，运行时互斥保证）
             const buttonsRow = document.createElement('div')
@@ -213,6 +232,32 @@ export class Toast {
         this.element.appendChild(this.content)
         return this
     }
+    /**
+     * 原地刷新确定性进度条（0~1）；仅在构造时提供了 progressRatio 的 toast 上有效
+     */
+    public setProgressRatio(ratio: number): this {
+        if (isNullOrUndefined(this.ratioProgress)) return this
+        this.progressRatioValue = Math.max(0, Math.min(1, ratio))
+        this.ratioProgress.style.transform = `scaleX(${this.progressRatioValue})`
+        return this
+    }
+
+    /**
+     * 原地刷新文本（仅 text 载荷型 toast；node 载荷的内容由调用方自管）。
+     * 只替换首个文本节点，保留可能存在的进度条/按钮行等兄弟元素。
+     */
+    public setText(text: string): this {
+        if (this.options.node !== undefined || isNullOrUndefined(this.content)) return this
+        this.options.text = text
+        const first = this.content.firstChild
+        if (first && first.nodeType === Node.TEXT_NODE) {
+            first.textContent = text
+        } else {
+            this.content.insertBefore(document.createTextNode(text), this.content.firstChild)
+        }
+        return this
+    }
+
     private addCloseButton(): this {
         if (this.options.close) {
             this.closeButton = document.createElement('span')

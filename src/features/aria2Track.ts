@@ -7,15 +7,21 @@ import { GMLock, GMLockTTL } from '../core/gmLock'
 import { originalAddEventListener } from '../core/hijack'
 import { createLogger } from '../core/log'
 import { unlimitedFetch } from '../core/extension'
-import { aria2API, aria2TaskExtractVideoID } from './aria2'
-import { analyzeLocalPath, getDownloadPath } from './downloadPath'
+import { aria2API, aria2TaskExtractVideoID } from '../download/aria2'
+import { analyzeLocalPath, getDownloadPath } from '../download/downloadPath'
 import type { Path } from '../core/path'
 import { getMoreCompleteVideoInfo, parseVideoInfo } from '../network/video'
 import { newToast, toastNode } from '../ui/notify'
 import { GM_KEY_IS_DEBUG } from '../core/constants'
 
 const log = createLogger('Aria2Track')
-const mediaLog = createLogger('MediaCenter')
+
+/** MediaCenter 推送 hook（宿主注入）：下载完成后由管理器调用。
+ * 推送回调（MediaCenter 推送，依赖视频解析+下载路径）由 main 组装时注入。 */
+let mediaCenterPushHook: ((videoInfo: FullVideoInfo) => Promise<void>) | undefined
+export function setMediaCenterPushHook(hook: (videoInfo: FullVideoInfo) => Promise<void>): void {
+    mediaCenterPushHook = hook
+}
 
 /**
  * Aria2 任务管理器
@@ -355,7 +361,8 @@ async function processAria2TrackTask(task: Aria2TrackTask, epoch: number): Promi
                         trackStatusToast(task.videoId, videoInfo?.Title ?? task.videoId, ToastType.Info, 'aria2TrackComplete')
                     }
                     if (isMediaCenterPushEnabled() && videoInfo) {
-                        if (await pushToMediaCenter(videoInfo)) {
+                        const pushed = (await mediaCenterPushHook?.(videoInfo).then(() => true).catch(() => false)) ?? false
+                        if (pushed) {
                             updateAria2TrackTask(task.videoId, { completedAt: now, pushedAt: now, pushFailedAt: undefined })
                             return // 推送成功 → 终态
                         }
@@ -865,162 +872,6 @@ async function restartAria2Task(gid: string, videoId: string, task: Aria2.Status
         log.warn(`restartAria2Task 失败 ${gid}:`, stringify(error))
         return undefined
     }
-}
-
-/** 验证 MediaCenter 映射在服务端是否仍然存在（GET /api/media/{id}）：
- * - 200：映射有效，结果按 TTL 缓存（key 含 API 地址，切换实例自动失效）；
- * - 404：映射失效——删除本地 idmap 并返回 undefined（调用方重新走 createMedia 流程）；
- * - 其他状态/网络异常：保守视为有效（返回原 id），避免误删映射导致重复推送；
- * - MediaCenter 未配置：不做请求，直接视为有效。 */
-async function verifyMediaCenterMapping(videoId: string, mediaCenterId: string): Promise<string | undefined> {
-    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) return mediaCenterId
-    const cacheKey = `${config.mediaCenterApi}|${mediaCenterId}`
-    const cached = mediaCenterIdMapValidateCache.get(cacheKey)
-    if (cached && Date.now() - cached.checkedAt < MEDIA_CENTER_ID_MAP_VALIDATE_TTL) {
-        return cached.valid ? mediaCenterId : undefined
-    }
-    try {
-        const apiBase = config.mediaCenterApi.replace(/\/+$/, '')
-        const checkRes = await unlimitedFetch(`${apiBase}/api/media/${mediaCenterId}`, {
-            method: 'GET',
-            headers: {
-                accept: 'application/json',
-                'content-type': 'application/json',
-                authorization: `Bearer ${config.mediaCenterApiKey}`
-            }
-        })
-        if (checkRes.status === 404) {
-            mediaLog.warn(`映射失效: ${videoId} → ${mediaCenterId} 在服务端不存在 (404)，删除本地映射`)
-            await db.deleteMediaCenterIdMap(videoId)
-            mediaCenterIdMapValidateCache.delete(cacheKey)
-            return undefined
-        }
-        if (checkRes.ok) {
-            mediaCenterIdMapValidateCache.set(cacheKey, { valid: true, checkedAt: Date.now() })
-            return mediaCenterId
-        }
-        mediaLog.warn(`验证映射 ${videoId} → ${mediaCenterId} 失败: ${checkRes.status}，保守视为有效`)
-        return mediaCenterId
-    } catch (e) {
-        mediaLog.warn(`验证映射 ${videoId} → ${mediaCenterId} 异常，保守视为有效: ${stringify(e)}`)
-        return mediaCenterId
-    }
-}
-
-/**
- * 将视频元数据推送到 MediaCenter
- * 流程：先 createMedia 创建媒体记录，再 updateMedia 更新完整元数据
- * @param {FullVideoInfo} videoInfo - 视频信息对象
- */
-export async function pushToMediaCenter(videoInfo: FullVideoInfo, mediaCenterId: string | undefined = undefined): Promise<boolean> {
-    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) return false
-    const apiBase = config.mediaCenterApi.replace(/\/+$/, '')
-    const authHeaders = {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        authorization: `Bearer ${config.mediaCenterApiKey}`
-    }
-    const downloadPath = getDownloadPath(videoInfo)
-
-    try {
-        // 校验映射在服务端仍有效：404 → verify 已删除本地映射并返回 undefined → 重新走 createMedia 流程；
-        // 网络异常/非 404 保守保留映射（返回原 id），避免误删导致重复推送
-        if (!isNullOrUndefined(mediaCenterId) && !mediaCenterId.isEmpty()) {
-            mediaCenterId = await verifyMediaCenterMapping(videoInfo.ID, mediaCenterId)
-        }
-
-        if (isNullOrUndefined(mediaCenterId) || mediaCenterId.isEmpty()) {
-            // 第一步：createMedia — 创建媒体记录（用 iwara 视频 ID 作为 fileHash 去重标识）
-            const createBody = prune({
-                filePath: downloadPath.fullPath,
-                fileHash: videoInfo.ID
-            })
-            const createRes = await unlimitedFetch(`${apiBase}/api/media`, {
-                method: 'POST',
-                headers: authHeaders,
-                body: JSON.stringify(createBody)
-            })
-
-            if (createRes.status === 409) {
-                // fileHash 重复，已有记录
-                const conflict = (await createRes.json()) as { error: string; existingId?: string; existingTitle?: string }
-                if (conflict.existingId && !conflict.existingId.isEmpty()) {
-                    mediaCenterId = conflict.existingId
-                    await db.putMediaCenterIdMap(videoInfo.ID, mediaCenterId)
-                    mediaLog.debug(`createMedia 409, reuse existing ${videoInfo.ID} → ${mediaCenterId}`)
-                } else {
-                    mediaLog.warn(`createMedia 409 but no existingId for ${videoInfo.ID}: ${conflict.error}`)
-                    return false
-                }
-            } else if (!createRes.ok) {
-                mediaLog.warn(`createMedia failed for ${videoInfo.ID}: ${createRes.status} ${await createRes.text()}`)
-                return false
-            } else {
-                // 201 Created 成功：{ message: 'media.importSuccess', id }
-                const createResult = (await createRes.json()) as { message?: string; error?: string; id?: string }
-                if (createResult.error) {
-                    mediaLog.warn(`createMedia error for ${videoInfo.ID}: ${createResult.error}`)
-                    return false
-                }
-                if (!createResult.id || createResult.id.isEmpty()) {
-                    mediaLog.warn(`createMedia returned no id for ${videoInfo.ID} ${stringify(createResult)}`)
-                    return false
-                }
-
-                mediaCenterId = createResult.id
-                await db.putMediaCenterIdMap(videoInfo.ID, mediaCenterId)
-            }
-        }
-
-        // 第二步：updateMedia — 更新完整元数据
-        const updateBody = prune({
-            filePath: downloadPath.fullPath,
-            fileHash: videoInfo.ID,
-            title: videoInfo.Title,
-            description: videoInfo.Description ?? '',
-            source: 'iwara',
-            author: videoInfo.Author,
-            altNames: videoInfo.Alias.isEmpty() ? undefined : [videoInfo.Alias],
-            tags: (videoInfo.Tags ?? []).map((t) => t.id),
-            duration: videoInfo.RAW?.file?.duration,
-            sourceMeta: videoInfo.RAW ? JSON.stringify(videoInfo.RAW) : undefined,
-            createdAt: new Date(videoInfo.UploadTime).toISOString()
-        })
-        const updateRes = await unlimitedFetch(`${apiBase}/api/media/${mediaCenterId}`, {
-            method: 'PUT',
-            headers: authHeaders,
-            body: JSON.stringify(updateBody)
-        })
-
-        if (!updateRes.ok) {
-            if (updateRes.status === 404) {
-                // 服务端记录不存在（验证通过后又被删除/实例切换）：清理本地映射，下次推送/扫描自动重建
-                mediaLog.warn(`updateMedia 404 for ${videoInfo.ID}: 服务端记录不存在，删除本地映射 ${mediaCenterId}`)
-                await db.deleteMediaCenterIdMap(videoInfo.ID)
-            } else {
-                mediaLog.warn(`updateMedia failed for ${videoInfo.ID}: ${updateRes.status} ${await updateRes.text()}`)
-            }
-            return false
-        }
-
-        // 校验响应体：服务端成功时返回 { message: 'media.updateSuccess', media: {...} }
-        const updateResult = (await updateRes.json()) as { message?: string; error?: string; media?: Record<string, unknown> }
-        if (updateResult.error) {
-            mediaLog.warn(`updateMedia error for ${videoInfo.ID}: ${updateResult.error}`)
-            return false
-        }
-        if (!updateResult.media) {
-            mediaLog.warn(`updateMedia returned no media for ${videoInfo.ID}`)
-            return false
-        }
-
-        mediaLog.debug('metadata pushed:', videoInfo.ID, '→', mediaCenterId)
-        return true
-    } catch (error) {
-        mediaLog.warn(`Push metadata error for ${videoInfo.ID}:`, stringify(error))
-    }
-
-    return false
 }
 
 /**
