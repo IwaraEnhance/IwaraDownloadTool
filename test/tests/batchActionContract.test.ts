@@ -1,5 +1,4 @@
 import { Test, TestGroup } from '../framework.ts'
-import '../setup.ts'
 import { registerBatchAction, getBatchActions } from '../../src/features/selection.ts'
 import { selectList } from '../../src/context/selection.ts'
 import { on } from '../../src/core/events.ts'

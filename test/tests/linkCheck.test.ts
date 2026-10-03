@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { config } from '../../src/core/config.ts'
 import { checkIsHaveDownloadLink } from '../../src/download/linkCheck.ts'

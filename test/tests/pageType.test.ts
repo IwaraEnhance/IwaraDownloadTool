@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { PageType } from '../../src/core/enum.ts'
 import { matchPathPattern, getPageTypeFromPath, PAGE_TYPE_ROUTES } from '../../src/core/pageType.ts'

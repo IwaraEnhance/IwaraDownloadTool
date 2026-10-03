@@ -1,6 +1,5 @@
 {
     "name": "iwaradownloadtool",
-    "displayName": "IwaraDownloadTool",
     "version": "3.3.127",
     "private": true,
     "type": "module",
@@ -8,13 +7,18 @@
         "dev:i18n": "node --import tsx/esm --experimental-strip-types ./build/generate-i18n.ts --watch",
         "test": "node --import tsx/esm --experimental-strip-types ./test/main.ts",
         "build": "node --import tsx/esm --experimental-strip-types ./build/build.ts",
-        "release": "node --import tsx/esm --experimental-strip-types ./build/release.ts"
+        "release": "node --import tsx/esm --experimental-strip-types ./build/release.ts",
+        "e2e": "npm run build && playwright test",
+        "e2e:ui": "npm run build && playwright test e2e/specs/uiBehavior.spec.ts",
+        "e2e:smoke": "npm run build && playwright test e2e/specs/smoke.spec.ts",
+        "e2e:gm": "npm run build && playwright test e2e/specs/gmBehavior.spec.ts"
     },
     "dependencies": {
         "dayjs": "^1.11.20",
         "idb": "^8.0.3"
     },
     "devDependencies": {
+        "@playwright/test": "^1.63.0",
         "@types/node": "^24.12.2",
         "@types/tampermonkey": "^5.0.5",
         "esbuild": "^0.28.1",

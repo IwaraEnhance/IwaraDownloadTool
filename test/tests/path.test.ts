@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { Path } from '../../src/core/path.ts'
 

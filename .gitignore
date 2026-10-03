@@ -2,5 +2,7 @@
 /dist
 /temp
 /docs
+/e2e/.scriptcatStore
+/e2e/.tampermonkeyStore
 .DS_Store
 Thumbs.db

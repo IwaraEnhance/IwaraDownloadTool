@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { checkApprovalConditions, getApprovalMode, setApprovalMode, type ApprovalCondition } from '../../src/core/approvalConditions.ts'
 import { GM_KEY_FRIEND_REQUEST_APPROVAL_MODE } from '../../src/core/constants.ts'

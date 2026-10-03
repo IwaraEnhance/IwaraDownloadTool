@@ -5,6 +5,7 @@ on:
       - master
     # 仅代码相关改动触发（paths 对标签推送不生效，标签推送始终触发）
     paths:
+      - "src/mata/mata.json"
       - "package.json"
       - "package-lock.json"
       - "src/**"
@@ -67,10 +68,10 @@ jobs:
         run: |
           FILES=$(find dist -type f | tr '\n' ' ')
           echo "file_list=${FILES}" >> $GITHUB_ENV
-      - name: 获取版本号
+      - name: 获取版本号（权威源 mata.json，与产物 @version 严格同步）
         run: |
-          PACKAGE_VERSION=$(cat package.json | jq '.version' | tr -d '"')
-          echo "current_version=${PACKAGE_VERSION}" >> $GITHUB_ENV
+          MATA_VERSION=$(cat src/mata/mata.json | jq '.version' | tr -d '"')
+          echo "current_version=${MATA_VERSION}" >> $GITHUB_ENV
       # master 分支推送时：确保版本标签 vX.Y.Z 指向 master HEAD 并推送（合并即自动发布）
       # 该推送由 github-actions 执行，重跑会被 if 守卫跳过，不会循环
       - name: 确保版本标签指向 master（master 分支推送时）

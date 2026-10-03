@@ -1,5 +1,4 @@
 import { Test, TestGroup } from '../framework.ts'
-import '../setup.ts'
 import { buildToastParamsFromReport } from '../../src/core/notify.ts'
 
 const testGroup = new TestGroup('report→toast 参数合并契约', '锁死 buildToastParamsFromReport 的「未传字段不产生自有键」语义（toast 三连回归的根源护栏）')

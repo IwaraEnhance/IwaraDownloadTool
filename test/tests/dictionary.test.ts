@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { Dictionary } from '../../src/core/dictionary.ts'
 

@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { Version } from '../../src/core/version.ts'
 import { VersionState } from '../../src/core/enum.ts'

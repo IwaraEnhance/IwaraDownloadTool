@@ -29,7 +29,7 @@
  *   npm run release -- patch --no-build      # 跳过构建验证
  *   npm run release -- patch --channel latest  # 构建验证用 latest 渠道（默认 dev，防意外更新）
  */
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 import { run, exec, getCurrentCommit, getCurrentBranch, hasUncommittedChanges } from './git.ts'
 import { log, success, error, warn } from './log.ts'
 
@@ -95,31 +95,39 @@ function parseArgs(argv: string[]): ReleaseOptions {
     return options
 }
 
-/** 从 package.json 中提取版本号 */
+/** 从 mata.json 中提取版本号（项目权威版本源；package.json 仅作 npm 生态镜像） */
 function getPackageVersion(): string {
-    const raw = readFileSync('package.json', 'utf-8')
-    const json = JSON.parse(raw) as Record<string, unknown>
-    if (!json.version || typeof json.version !== 'string') {
-        throw new Error('package.json 中未找到有效的 version 字段')
+    const raw = readFileSync('src/mata/mata.json', 'utf-8')
+    const mata = JSON.parse(raw) as Record<string, unknown>
+    if (!mata.version || typeof mata.version !== 'string') {
+        throw new Error('src/mata/mata.json 中未找到有效的 version 字段')
     }
-    return json.version
+    return mata.version
 }
 
-/** 语义化版本递增（package.json 版本恒为 X.Y.Z，无预发布段） */
-function bumpVersion(version: string, level: ReleaseOptions['level']): string {
+/**
+ * 语义化版本递增（版本恒为 X.Y.Z，无预发布段）。返回 next 与落盘函数。
+ * 权威写 mata.json；package.json 同镜像一份（npm 生态依赖其存在），不再作为构建版本来源。
+ */
+function bumpVersion(version: string, level: ReleaseOptions['level']): { next: string; write(): void } {
     const [major, minor, patch] = version.split('.').map(Number)
-    switch (level) {
-        case 'major':
-            return `${major + 1}.0.0`
-        case 'minor':
-            return `${major}.${minor + 1}.0`
-        default:
-            return `${major}.${minor}.${patch + 1}`
+    const next = level === 'major' ? `${major + 1}.0.0` : level === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`
+    const write = (): void => {
+        // 权威源：mata.json（保留 4 空格缩进的仓库既有 JSON 风格）
+        const mataPath = 'src/mata/mata.json'
+        const mata = JSON.parse(readFileSync(mataPath, 'utf-8')) as Record<string, unknown>
+        mata.version = next
+        writeFileSync(mataPath, JSON.stringify(mata, null, 4) + '\n')
+        // 镜像：package.json
+        const pkg = JSON.parse(readFileSync('package.json', 'utf-8')) as Record<string, unknown>
+        pkg.version = next
+        writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n')
     }
+    return { next, write }
 }
 
-/** 发布提交只允许包含这些文件（package.json/package-lock.json 由 npm version 修改，src/i18n.ts 由构建生成） */
-const RELEASE_FILES = ['package.json', 'package-lock.json', 'src/i18n.ts']
+/** 发布提交只允许包含这些文件（mata.json/package.json 为版本 bump 产物，src/i18n.ts 由构建生成） */
+const RELEASE_FILES = ['src/mata/mata.json', 'package.json', 'package-lock.json', 'src/i18n.ts']
 
 /**
  * 发布完整性守卫：确保发布过程中没有绕过发布流程的手动提交或暂存
@@ -206,7 +214,7 @@ function main(): void {
     syncWithRemote(options.dryRun)
     const backupCommit = getCurrentCommit()
     const oldVersion = getPackageVersion()
-    const newVersion = bumpVersion(oldVersion, options.level)
+    const { next: newVersion, write: writeVersion } = bumpVersion(oldVersion, options.level)
     log(TAG, `分支: ${branch}，版本升级: ${oldVersion} → ${newVersion}${options.dryRun ? '（演练模式，不实际执行）' : ''}`)
 
     // ── 2. 运行测试（验证 bump 前代码质量） ──
@@ -218,7 +226,8 @@ function main(): void {
     // ── 3-5. bump 版本 → 构建验证 → 提交（失败可安全回滚） ──
     try {
         log(TAG, `执行 ${options.level} 版本升级...`)
-        run(`npm version ${options.level} --no-git-tag-version`, { tag: TAG, dryRun: options.dryRun })
+        // 版本落盘：mata.json（权威）+ package.json（镜像）；dryRun 不写
+        if (!options.dryRun) writeVersion()
 
         // 先 bump 后构建，保证产物使用新版本号
         if (options.runBuild) {
@@ -233,7 +242,7 @@ function main(): void {
         }
 
         log(TAG, '创建版本提交...')
-        run('git add package.json package-lock.json src/i18n.ts', { tag: TAG, dryRun: options.dryRun })
+        run('git add src/mata/mata.json package.json package-lock.json src/i18n.ts', { tag: TAG, dryRun: options.dryRun })
         if (!options.dryRun) {
             verifyReleaseIntegrity(backupCommit)
         }
