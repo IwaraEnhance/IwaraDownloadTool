@@ -167,7 +167,7 @@ test.describe('GM 存储真行为（产品类 × 真实 ScriptCat，实例直挂
         // 这与产品调用方「acquire 失败后由调用方重试」的用法同构（acquireWait 留 test/）
         await expect
             .poll(
-                async () => page.evaluate(`${frameLock('B')}.acquire(${JSON.stringify(lockName)}, 60_000)`),
+                async () => page.evaluate(`(function(){ const l = ${frameLock('B')}; return l.acquire(${JSON.stringify(lockName)}, 60_000) })()`),
                 { timeout: 10_000 }
             )
             .toBe(true)

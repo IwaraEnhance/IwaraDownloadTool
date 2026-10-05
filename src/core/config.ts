@@ -23,6 +23,10 @@ const DEFAULT_CONFIG: ImportConfig = {
     filterUnlistedAndPrivate: false,
     autoCollapseMenu: true,
     friendRequestApprove: false,
+    // 审批条件 id 列表（string[]，JSON 存储；键名与历史 GM 键一致，存量数据零迁移）
+    friendRequestApprovalConditions: ['always'],
+    // 审批条件组合模式（any=任一满足即批准 / all=全部满足才批准）
+    friendRequestApprovalMode: 'any',
     friendApproveEvidenceThreadId: '',
     promoteScriptAuthor: true,
     downloadPriority: 'Source',
@@ -65,6 +69,8 @@ export class Config {
     filterUnlistedAndPrivate: boolean = DEFAULT_CONFIG.filterUnlistedAndPrivate
     autoCollapseMenu: boolean = DEFAULT_CONFIG.autoCollapseMenu
     friendRequestApprove: boolean = DEFAULT_CONFIG.friendRequestApprove
+    friendRequestApprovalConditions: string[] = DEFAULT_CONFIG.friendRequestApprovalConditions
+    friendRequestApprovalMode: 'any' | 'all' = DEFAULT_CONFIG.friendRequestApprovalMode
     friendApproveEvidenceThreadId: string = DEFAULT_CONFIG.friendApproveEvidenceThreadId
     promoteScriptAuthor: boolean = DEFAULT_CONFIG.promoteScriptAuthor
     enableUnsafeMode: boolean = DEFAULT_CONFIG.enableUnsafeMode

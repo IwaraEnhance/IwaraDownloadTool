@@ -1,6 +1,5 @@
 import { Test, TestGroup } from '../framework.ts'
 import { checkApprovalConditions, getApprovalMode, setApprovalMode, type ApprovalCondition } from '../../src/core/approvalConditions.ts'
-import { GM_KEY_FRIEND_REQUEST_APPROVAL_MODE } from '../../src/core/constants.ts'
 
 const approvalModeTestGroup = new TestGroup('ApprovalMode', '好友请求审批条件组合模式（any/all）契约测试')
 
@@ -107,12 +106,12 @@ approvalModeTestGroup.add(
 
 approvalModeTestGroup.add(
     new Test('模式存取：缺省回退 any（与历史 OR 语义一致）', 'async', function () {
-        GM_deleteValue(GM_KEY_FRIEND_REQUEST_APPROVAL_MODE)
+        GM_deleteValue('friendRequestApprovalMode')
         this.assertEqual(getApprovalMode(), 'any')
         setApprovalMode('all')
         this.assertEqual(getApprovalMode(), 'all')
         // 垃圾值回退 any
-        GM_setValue(GM_KEY_FRIEND_REQUEST_APPROVAL_MODE, 'garbage')
+        GM_setValue('friendRequestApprovalMode', 'garbage')
         this.assertEqual(getApprovalMode(), 'any')
         setApprovalMode('any')
         this.assertEqual(getApprovalMode(), 'any')

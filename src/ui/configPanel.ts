@@ -83,8 +83,8 @@ const CONFIG_FIELDS: ConfigField[] = [
     { name: 'enableBeautify', type: 'switch', tabs: ['general'], group: 'interface' },
     // 好友请求管理页（一键审批 + 审批模式 + 审批条件 + 证据帖）
     { name: 'friendRequestApprove', type: 'switch', tabs: ['friends'], group: 'friendRequest', rerender: true },
-    { name: 'friendRequestApproveMode', type: 'approvalMode', tabs: ['friends'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
-    { name: 'friendRequestApproveConditions', type: 'conditions', tabs: ['friends'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
+    { name: 'friendRequestApprovalMode', type: 'approvalMode', tabs: ['friends'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
+    { name: 'friendRequestApprovalConditions', type: 'conditions', tabs: ['friends'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
     // 评论证据帖 ID（commentedForumThread 条件的证据源）；forumThread 的 URL 末段或纯 ID 皆可
     { name: 'friendApproveEvidenceThreadId', type: 'text', tabs: ['friends'], group: 'friendRequest', dependsOn: 'friendRequestApprove' },
     // 高级页（脚本自身行为与调试）
@@ -300,8 +300,8 @@ export class configEdit {
             ]
         })
     }
-    /** 好友请求审批条件多选框：勾选项写入 GM 存储（跨页同步），多条件 OR 语义（任一满足即批准）。
-     * 全不选时回退为 always（无条件批准），与后端 getEnabledApprovalConditionIds 的缺省一致 */
+    /** 好友请求审批条件多选框：勾选项经 Config Proxy 写入（跨页同步），多条件按模式归约语义。
+     * 全不选时回退为 always（无条件批准），与 getEnabledApprovalConditionIds 的缺省一致 */
     private approvalConditionsField(name: string, dependsOn?: string) {
         const enabled = getEnabledApprovalConditionIds()
         return renderNode({
@@ -347,7 +347,7 @@ export class configEdit {
         })
     }
     /** 好友请求审批条件组合模式单选：any（任一满足即批准）/ all（全部满足才批准）。
-     * 值写入 GM 存储跨页同步，与后端 getApprovalMode 缺省 any 一致 */
+     * 值经 Config Proxy 写入（跨页同步），与 getApprovalMode 缺省 any 一致 */
     private approvalModeField(name: string, dependsOn?: string) {
         const current = getApprovalMode()
         const modes: ApprovalMode[] = ['any', 'all']
@@ -450,9 +450,9 @@ export class configEdit {
             this.renderAllTabs()
             return
         }
-        // conditions / approvalMode 类型（值存 GM 存储而非 Config，且多 input 共享 name）跳过单值同步
-        const gmFieldType = CONFIG_FIELDS.find((field) => field.name === item)?.type
-        if (gmFieldType === 'conditions' || gmFieldType === 'approvalMode') return
+        // conditions / approvalMode 类型（多 input 共享 name）跳过单值同步（各自 change 处理器内聚重算）
+        const customFieldType = CONFIG_FIELDS.find((field) => field.name === item)?.type
+        if (customFieldType === 'conditions' || customFieldType === 'approvalMode') return
         // 普通字段：同步 DOM 值（覆盖互斥联动、跨页远程同步等非事件路径）
         const element = this.interface.querySelector<HTMLInputElement>(`[name=${item}]`)
         if (element) {

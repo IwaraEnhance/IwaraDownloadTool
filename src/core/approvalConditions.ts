@@ -1,13 +1,12 @@
 /**
- * 好友请求审批条件注册表（纯数据 + GM 存取 + 无副作用谓词，
- * 纯数据 + GM 存取 + 无副作用谓词，供配置面板（ui）与审批编排（features）共同消费）。
+ * 好友请求审批条件注册表（纯数据 + 无副作用谓词）。
  *
- * 多条件组合模式：`any`（任一满足即批准，OR）/ `all`（全部满足才批准，AND），
- * 由用户在配置中切换，跨页同步存放在 GM 键 GM_KEY_FRIEND_REQUEST_APPROVAL_MODE；
- * 多条件之间按该模式归约；用户在配置中按 id 勾选启用，跨页同步
- * 存放在 GM 键 GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS。
+ * 多条件组合与启用列表均为用户配置，属性名与历史 GM 键一致（存量数据零迁移）：
+ * - `config.friendRequestApprovalMode`：any（任一满足即批准，OR）/ all（全部满足才批准，AND）
+ * - `config.friendRequestApprovalConditions`：用户勾选启用的条件 id 列表
+ * 存取统一走 Config Proxy（持久化/跨页同步/配置导入与其他配置项同一机制）。
  */
-import { GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS, GM_KEY_FRIEND_REQUEST_APPROVAL_MODE, GM_KEY_APPROVE_EVIDENCE_THREAD } from './constants'
+import { config } from './config'
 import { createLogger } from './log'
 import { isNullOrUndefined } from './env'
 
@@ -103,11 +102,11 @@ const conditionCommentedOnProfile: ApprovalCondition = {
     test: async ({ user, commentsByUser }) => hasCommentIn(commentsByUser, 'profile', user.id)
 }
 
-/** 内置审批条件：对方在指定论坛帖子下发表过评论（帖子 ID 由 GM 键配置，批开始时抓取一次） */
+/** 内置审批条件：对方在指定论坛帖子下发表过评论（帖子 ID 由配置项 friendApproveEvidenceThreadId 提供，批开始时抓取一次） */
 const conditionCommentedOnForumThread: ApprovalCondition = {
     id: 'commentedForumThread',
     test: async ({ user, commentsByUser }) => {
-        const threadId = GM_getValue<string | undefined>(GM_KEY_APPROVE_EVIDENCE_THREAD, undefined)
+        const threadId = config.friendApproveEvidenceThreadId
         if (isNullOrUndefined(threadId) || threadId.isEmpty()) return false
         return hasCommentIn(commentsByUser, `forum:${threadId}`, user.id)
     }
@@ -131,30 +130,29 @@ export function getApprovalCondition(id: string): ApprovalCondition | undefined 
     return BUILTIN_APPROVAL_CONDITIONS.find((c) => c.id === id)
 }
 
-/** 读取已启用的审批条件 id 列表（未配置时默认 always = 无条件批准） */
+/** 读取已启用的审批条件 id 列表（空/非数组回退 always = 无条件批准） */
 export function getEnabledApprovalConditionIds(): string[] {
-    const stored = GM_getValue<string[] | undefined>(GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS, undefined)
+    const stored = config.friendRequestApprovalConditions
     if (!Array.isArray(stored) || stored.length === 0) return ['always']
     return stored
 }
 
-/** 保存已启用的审批条件 id 列表（配置面板调用） */
+/** 保存已启用的审批条件 id 列表（配置面板调用；走 Proxy 写入，触发跨页同步） */
 export function setEnabledApprovalConditionIds(ids: string[]): void {
-    GM_setValue(GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS, ids)
+    config.friendRequestApprovalConditions = ids
 }
 
 /** 审批条件组合模式：any = 任一满足即批准（OR，缺省，向后兼容）；all = 全部满足才批准（AND） */
 export type ApprovalMode = 'any' | 'all'
 
-/** 读取条件组合模式（未配置或缺值回退 any，与历史 OR 语义一致） */
+/** 读取条件组合模式（非 all 一律回退 any，与历史 OR 语义一致） */
 export function getApprovalMode(): ApprovalMode {
-    const stored = GM_getValue<string | undefined>(GM_KEY_FRIEND_REQUEST_APPROVAL_MODE, undefined)
-    return stored === 'all' ? 'all' : 'any'
+    return config.friendRequestApprovalMode === 'all' ? 'all' : 'any'
 }
 
-/** 保存条件组合模式（配置面板调用） */
+/** 保存条件组合模式（配置面板调用；走 Proxy 写入，触发跨页同步） */
 export function setApprovalMode(mode: ApprovalMode): void {
-    GM_setValue(GM_KEY_FRIEND_REQUEST_APPROVAL_MODE, mode)
+    config.friendRequestApprovalMode = mode
 }
 
 /** 依次执行条件列表并按模式归约：any = 任一满足即 true（短路）；all = 全部满足才 true（任一不满足即短路）。

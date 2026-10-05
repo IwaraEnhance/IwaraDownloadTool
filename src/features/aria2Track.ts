@@ -513,14 +513,18 @@ function syncAria2TrackWorkers(epoch: number): void {
 }
 
 /**
- * 尝试通过单把全局锁选举本页为管理器；成功后由本页处理整个队列。
- * 管理器页面关闭/崩溃后租约过期，其他页面可重新选举，避免任务无人管理。
+ * 尝试通过全局锁选举本页为管理器；成功后由本页处理整个队列。
+ * 双后端语义：Web Locks 可用时浏览器原生互斥（同名锁至多一页持有，无双胜出窗口），
+ * 页面关闭/崩溃锁自动释放；不可用时退回 GM 存储租约（75s TTL 兗底）。
+ * 每轮选举先异步预取 web 锁：首次同步 acquire 降级 GM 后端，下一轮即提升到 web 后端。
  */
 async function tryBecomeAria2TrackManager(): Promise<void> {
     if (aria2TrackManagerLoopRunning) return
     aria2TrackManagerLoopRunning = true // 同步置位，防止并发重复启动管理循环
     try {
-        // 接管后由 GMLock 内部心跳自动续期（默认 TTL/3），失去锁时主循环通过 isHeld 退出
+        // 预取 web 后端锁（可用时把后续同步 acquire 提升到浏览器原生互斥）
+        await aria2TrackLock.acquireReady(ARIA2_TRACK_MANAGER_LOCK)
+        // 接管后由 GMLock 内部心跳自动续期（GM 后端）；web 后端无租约，锁保直到页关/释放
         if (!aria2TrackLock.acquireWithHeartbeat(ARIA2_TRACK_MANAGER_LOCK, GMLockTTL.DaemonTask)) return
         log.debug('本页成为管理器，接管整个队列')
         await startAria2TrackManagerLoop()
@@ -900,8 +904,10 @@ export async function trackExistingAria2Tasks(): Promise<void> {
         GMLock.pruneExpired()
     }, ARIA2_TRACK_SCAN_INTERVAL)
 
-    // 页面关闭/进入后台缓存时立即释放管理器锁：正常退出无需等待租约过期即可被其他页面接管
-    // （崩溃/非正常退出场景仍由 75s 租约自动过期兜底，不会死锁）
+    // 页面关闭/进入后台缓存时立即释放管理器锁：
+    // web 后端（Web Locks）：主动释放，也由浏览器在页面销毁时自动兜底——
+    // 正常/异常退出都不会死锁；
+    // GM 后端：正常退出立即让位，崩溃场景由 75s 租约自动过期兜底
     originalAddEventListener.call(unsafeWindow, 'pagehide', () => {
         aria2TrackLock.release(ARIA2_TRACK_MANAGER_LOCK)
     })

@@ -99,8 +99,11 @@ export async function runBatchTask<T>(options: BatchTaskOptions<T>): Promise<T |
     const lock = new GMLock(UUID())
     const tracker = createProgressTracker('')
 
-    let acquired = lock.acquireWithHeartbeat(options.lockName, options.ttl)
-    if (!acquired) {
+    let acquired = await lock.acquireAsync(options.lockName, options.ttl)
+    if (acquired) {
+        // acquireAsync 不含内部心跳：获得后补启（GM 后端续期 / web 后端失锁探测）
+        lock.startHeartbeatFor(options.lockName, options.ttl, onLostHeartbeat(options))
+    } else {
         if (options.onConflict === 'exit') {
             report('warn', { body: '%#taskInProgress#%', duration: 3000, close: true })
             return undefined
@@ -117,6 +120,12 @@ export async function runBatchTask<T>(options: BatchTaskOptions<T>): Promise<T |
     }
 
     try {
+        // 进 iterate 前先复核一次持有权：acquire 与后续动作的间隙（双页同帧抢占的
+        // 最后写入者胜出消解窗口）不应让任何业务副作用跑在复核之前
+        if (!lock.isHeld(options.lockName)) {
+            taskConflict()
+            return undefined
+        }
         return await options.iterate({
             isHeld: () => lock.isHeld(options.lockName),
             progress: (text) => tracker.update(text),
@@ -126,6 +135,14 @@ export async function runBatchTask<T>(options: BatchTaskOptions<T>): Promise<T |
     } finally {
         tracker.close()
         lock.release(options.lockName)
+    }
+}
+
+/** 失去锁的 runner 兑底退出：静默（调用方 iterate 循环顶部 isHeld 失锁自行提示/退出） */
+function onLostHeartbeat(options: BatchTaskOptions<any>): (name: string) => void {
+    return () => {
+        /* 心跳失锁由 iterate 下一轮 isHeld 感知，无需 runner 额外动作 */
+        void options
     }
 }
 

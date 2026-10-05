@@ -25,10 +25,45 @@
  */
 import { GMSyncDictionary } from './core/gmSyncDictionary'
 import { GMLock } from './core/gmLock'
+import { isWebLockSupported } from './core/webLock'
 
 // @ts-ignore
 // main.ts debug 钩子同款惯例：unsafeWindow 直挂（挂的是类本体，非包装口）
-unsafeWindow.__e2eProbes = { GMSyncDictionary, GMLock }
+// webLockProbe：Web Locks（NavigatorLocks）沙箱可达性实证口——
+// supported = unsafeWindow.navigator.locks 探测结果（同步）；
+// tryAcquire = 探针内真实发起一次 ifAvailable 请求（异步，结果落 DOM 属性）。
+// e2e 据此判定「双后端 GMLock 在真实管理器下走哪条后端」，不可达则
+// GMLock 自动降级 GM 存储租约（isWebLockSupported 返回 false 的同源验证）
+const webLockProbe = {
+    supported: isWebLockSupported(),
+    tryAcquire: async (name: string): Promise<boolean> => {
+        try {
+            const { WebLock } = await import('./core/webLock')
+            const lock = new WebLock('e2e-probe')
+            // ⚠️ acquireAsync 的 resolve 语义 = 「获得锁并在回调挂起后」——granted 结果
+            // 只有在 release 被调用、挂起回调返回后才落回。因此这里不 await 本体，
+            // 而是竞速窗口：500ms 内拿不到 granted 即视为 denied/不可达，随后立即释放。
+            // 同时后台 keepAlive 保证真实 granted 也被立即释放，不占住锁名空间
+            const outcome = await Promise.race([
+                lock.acquireAsync(name).finally(() => lock.release(name)),
+                new Promise<boolean>((r) => setTimeout(() => r(false), 500))
+            ])
+            return outcome
+        } catch {
+            return false
+        }
+    }
+}
+// @ts-ignore
+unsafeWindow.__e2eProbes = {
+    GMSyncDictionary,
+    GMLock,
+    webLockProbe,
+    // 裸 GM 存储原始 API 直通（e2e 诊断用：跨上下文传播语义实证）
+    GM_getValue: (key: string, defaultValue?: unknown) => GM_getValue(key, defaultValue),
+    GM_setValue: (key: string, value: unknown) => GM_setValue(key, value),
+    GM_deleteValue: (key: string) => GM_deleteValue(key)
+}
 
 /** 就绪标记：DOM 属性（跨沙箱世界共享；window 属性不跨世界） */
 const markReady = (): void => {

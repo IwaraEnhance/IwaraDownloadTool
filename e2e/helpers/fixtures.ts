@@ -283,15 +283,20 @@ export function baseProfileDir(): string {
  */
 export async function baseProfileReady(dir: string): Promise<string> {
     // v4：Phase 1 新增真实 Chrome 通道 + 反自动化指纹参数 + 站点 cookie 预热（cf_clearance
-    // 随基准 profile 被 Phase 2 拷贝继承）；旧哨兵 profile 换名强制重建
-    const sentinel = path.join(dir, '.user-scripts-enabled-v4')
+    // 随基准 profile 被 Phase 2 拷贝继承）；旧哨兵 profile 换名强制重建。
+    // ⚠️ 哨兵按管理器隔离（v4-<managerId>）：各驱动的 prepareProfile 预配置不同
+    // （TM 需要 fileAccess=true，ScriptCat 需要 firstShowDeveloperMode 预写），
+    // 共用哨兵会让后切换的管理器跳过自己的预配置（实测：ScriptCat 哨兵残留 →
+    // TM 的 fileAccess 未写入 → file:// 安装链路 fail，ask.html 永不出现）
+    const managerId = resolveManager().id
+    const sentinel = path.join(dir, `.user-scripts-enabled-v4-${managerId}`)
     if (fs.existsSync(sentinel)) return dir
     fs.rmSync(dir, { recursive: true, force: true })
     fs.mkdirSync(dir, { recursive: true })
     const ctx1 = await launchExtensionContext(dir)
     const extensionId = await waitExtensionId(ctx1)
     await enableUserScriptsAccess(ctx1, extensionId)
-    // 管理器自身配置预配置（TM legacy 等）：写入基准 profile，Phase 2 拷贝后生效
+    // 管理器自身配置预配置（TM legacy/fileAccess 等）：写入基准 profile，Phase 2 拷贝后生效
     await resolveManager().prepareProfile?.(ctx1, extensionId)
     // 站点 cookie 预热：Phase 1 过一次盾（cf_clearance 持久化进基准 profile），
     // Phase 2 每用例拷贝即继承——同通道同 UA 同指纹，cookie 绑定有效
@@ -399,6 +404,9 @@ export const testSharedScript = base.extend<{}, { sharedSession: SharedSession; 
             fs.cpSync(baseDir, userDataDir, { recursive: true })
             const context = await launchExtensionContext(userDataDir)
             const extensionId = await waitExtensionId(context)
+            // 运行时权限/配置预配置（每次扩展载入后直接对当前实例操作，
+            // 不依赖基准 profile 的哨兵持久化——管理器切换/CDP 动态载入都安全）
+            await resolveManager().prepareRuntime?.(context, extensionId)
             // 脚本只装一次（主脚本；探针仅 mata.e2e.probeEntry 声明了的项目安装）
             await resolveManager().installScript(context, extensionId, resolveUserScript())
             if (artifactNames(mata).probeScript) {

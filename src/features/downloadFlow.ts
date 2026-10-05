@@ -195,7 +195,8 @@ export async function pushDownloadTask(videoInfo: VideoInfo): Promise<void> {
         return
     }
     const lockName = `${PUSH_LOCK_PREFIX}${videoInfo.ID}`
-    if (!pushLock.acquire(lockName, GMLockTTL.ShortTask)) {
+    // 全路径异步锁 acquisition：web 后端（预取→真实持有→复核一步到位）或 GM 后端
+    if (!(await pushLock.acquireAsync(lockName, GMLockTTL.ShortTask))) {
         log.debug(`Skip duplicate push (another page): ${videoInfo.ID}`)
         return
     }

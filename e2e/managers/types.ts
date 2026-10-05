@@ -19,6 +19,14 @@ export interface ManagerDriver {
      * 的 .user.js 导航，legacy 才会自动弹安装页。写入进基准 profile，Phase 2 生效。
      */
     prepareProfile?(context: BrowserContext, extensionId: string): Promise<void>
+    /**
+     * 运行时权限/配置预配置（可选，Phase 2 扩展载入后、installScript 前调用）。
+     * 与 prepareProfile 的区别：直接操作**当前 context 里当前扩展实例**的
+     * chrome://extensions 管理页（developerPrivate）写权限，不依赖基准 profile
+     * 持久化与哨兵时序——「每次载入扩展实例都需要」的权限归这里（如 TM 的
+     * fileAccess=true 需对本次 CDP 动态 loadUnpacked 的实例生效）。
+     */
+    prepareRuntime?(context: BrowserContext, extensionId: string): Promise<void>
     /** 在扩展上下文中安装脚本；返回脚本引用句柄（各管理器唯一分叉点） */
     installScript(context: BrowserContext, extensionId: string, scriptPath: string): Promise<string>
     /**

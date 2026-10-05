@@ -3,7 +3,6 @@ import { delay, isNullOrUndefined } from '../core/env'
 import { PageType, ToastType } from '../core/enum'
 import { newToast, toastNode } from '../ui/notify'
 import { createLogger } from '../core/log'
-import { GM_KEY_FRIEND_REQUEST_APPROVAL_CONDITIONS } from '../core/constants'
 import { getPageTypeFromPath } from '../core/pageType'
 import { renderNode, unlimitedFetch } from '../core/extension'
 import { originalNodeAppendChild } from '../core/hijack'
@@ -17,7 +16,6 @@ import { resolvePlaceholders } from '../core/i18nRuntime'
 import { getLocalUser } from '../network/users'
 import { fetchAllComments } from '../network/comments'
 import { type CommentEvidenceCache } from '../core/approvalConditions'
-import { GM_KEY_APPROVE_EVIDENCE_THREAD } from '../core/constants'
 import '../css/friendRequests.css'
 
 const log = createLogger('FriendRequests')
@@ -31,7 +29,7 @@ export interface ApprovalContext {
 }
 
 /**
- * 好友请求审批条件注册表已下沉 core/approvalConditions.ts（纯数据 + GM 存取 +
+ * 好友请求审批条件注册表已下沉 core/approvalConditions.ts（纯数据 +
  * 无副作用谓词，供 ui 配置面板与 features 审批编排共同消费）。此处 re-export
  * 保持既有导入路径兼容（ApprovalContext 本文件保留本地定义避免冲突）。
  */
@@ -109,7 +107,7 @@ async function gatherCommentEvidence(conditionIds: string[], me: Iwara.User): Pr
             log.warn(`评论证据抓取失败 (${sourceKey}):`, error)
         }
     }
-    const threadId = GM_getValue<string | undefined>(GM_KEY_APPROVE_EVIDENCE_THREAD, undefined)
+    const threadId = config.friendApproveEvidenceThreadId
     await Promise.all([
         ...(conditionIds.includes('commentedProfile') ? [load('profile', 'profile', me.id)] : []),
         ...(conditionIds.includes('commentedForumThread') && !isNullOrUndefined(threadId) && !threadId.isEmpty()
