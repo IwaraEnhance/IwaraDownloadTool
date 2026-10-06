@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - master
-    # 仅代码相关改动触发（paths 对标签推送不生效，标签推送始终触发）；
-    # pkg/lock 无 version 字段（版本权威源 mata.json），依赖变更仍值得过一遍正式构建
     paths:
       - "src/mata/mata.json"
       - "package.json"
@@ -18,9 +16,6 @@ env:
   release_tag: latest
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
-  # 判断是否执行正式版流程：
-  # - 标签推送：仅当标签指向 master 时才构建正式版
-  # - master 分支推送（如合并 PR）：直接执行，自动完成正式版
   check:
     permissions:
       contents: read
@@ -69,12 +64,10 @@ jobs:
         run: |
           FILES=$(find dist -type f | tr '\n' ' ')
           echo "file_list=${FILES}" >> $GITHUB_ENV
-      - name: 获取版本号（权威源 mata.json，与产物 @version 严格同步）
+      - name: 获取版本号
         run: |
           MATA_VERSION=$(cat src/mata/mata.json | jq '.version' | tr -d '"')
           echo "current_version=${MATA_VERSION}" >> $GITHUB_ENV
-      # master 分支推送时：确保版本标签 vX.Y.Z 指向 master HEAD 并推送（合并即自动发布）
-      # 该推送由 github-actions 执行，重跑会被 if 守卫跳过，不会循环
       - name: 确保版本标签指向 master（master 分支推送时）
         if: github.ref_type == 'branch'
         run: |
@@ -84,7 +77,6 @@ jobs:
             git tag "v${current_version}"
           fi
           git push origin "refs/tags/v${current_version}" --force
-      # 仅删除同名 Release（保留已推送的标签，避免触发自身导致循环）
       - run: gh release delete v${{ env.current_version }} --yes
         continue-on-error: true
       - name: 发布版本存档
@@ -93,7 +85,6 @@ jobs:
             --title "${{ env.current_version }}" \
             --notes "v${{ env.current_version }} ${{ github.sha }}"
         continue-on-error: true
-      # latest 移动标签不匹配 v* 触发器，可安全 cleanup
       - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
         continue-on-error: true
       - name: 发布正式版本

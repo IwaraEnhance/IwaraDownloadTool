@@ -19,9 +19,6 @@
 - Supports downloading hidden videos <sup>\*Requires knowing the video ID</sup>
 - Automatic video metadata download (JSON, a `.json` file named after the video) <sup>\*Disabled by default</sup>
 - MediaCenter integration <sup>\*Experimental; requires enabling "Experimental Features" and configuring the API address and key</sup>
-    - Automatically push metadata to MediaCenter after Aria2 downloads complete, with automatic backoff retry on failure
-    - One-click sync of the local video cache to MediaCenter (automatic two-way ID mapping)
-    - Local database export (videos / follows / friends / idmap tables as JSON)
 - One-click friend request approval <sup>\*Disabled by default, needs to be enabled in settings</sup>
     - Configurable approval conditions (OR semantics, approve if any matches) <sup>\*Defaults to unconditional approval</sup>
     - Always approve / they follow me / I follow them / they are Premium / active within 30 days / account older than 30 days / account in good standing

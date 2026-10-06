@@ -7,7 +7,6 @@ env:
   release_tag: preview
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
-  # 判断标签指向：仅当标签指向 dev（不是 master）时才构建预览版
   check:
     permissions:
       contents: read
@@ -56,7 +55,6 @@ jobs:
         run: |
           MATA_VERSION=$(cat src/mata/mata.json | jq '.version' | tr -d '"')
           echo "current_version=${MATA_VERSION}" >> $GITHUB_ENV
-      # 仅删除同名 Release（保留已推送的标签，避免触发自身导致循环）
       - run: gh release delete v${{ env.current_version }} --yes
         continue-on-error: true
       - name: 发布版本存档（预览）
@@ -65,7 +63,6 @@ jobs:
             --prerelease \
             --title "${{ env.current_version }}" \
             --notes "v${{ env.current_version }} ${{ github.sha }}"
-      # preview 移动标签不匹配 v* 触发器，可安全 cleanup
       - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
         continue-on-error: true
       - name: 发布预览版本
