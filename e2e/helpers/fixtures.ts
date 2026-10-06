@@ -5,7 +5,7 @@
  * --disable-extensions-except/--load-extension）与 ScriptCat 官方 e2e 设施（其仓库 e2e/fixtures.ts）。
  *
  * 环境 / 文件产物 / 安装方式（2026-10-02 更新：显示模式默认有头）：
- * - 默认有头窗口（调试可旁观、live 过盾更接近真人）；E2E_HEADLESS=1 切无头（--headless=new + channel: 'chromium'，CI/无显示服务器用）；
+ * - 默认有头窗口（调试可旁观）；E2E_HEADLESS=1 切无头（--headless=new + channel: 'chromium'，CI/无显示服务器用）；
  * - 注入未压缩主产物（产物名/目标站点读自 src/mata/mata.json 权威信息源，见 helpers/mataInfo.ts）；
  * - 经管理器驱动安装脚本（ScriptCat 走官方安装页 chrome-extension://<id>/src/install.html?url=…）。
  */
@@ -14,8 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test as base, chromium, type BrowserContext, type Page } from '@playwright/test'
 import { ANTI_FINGERPRINT_ARGS, browserChannel, displayOptions } from './launchArgs'
-import { TARGET_SITE, isChallengePage, waitChallengeCleared, warmSiteCookie } from './challenge'
-import { mataInfo, artifactNames } from './mataInfo'
+import { getTargetSite, mataInfo, artifactNames } from './mataInfo'
 import { resolveManager } from '../managers'
 import { dumpTabs, registerTabTracing } from './tabs'
 import { askVerdict, isHumanMode, type HumanVerdict } from './human'
@@ -354,8 +353,7 @@ export function baseProfileDir(): string {
  * （同进程内靠执行顺序，跨进程靠先清后建的目录语义）。
  */
 export async function baseProfileReady(dir: string): Promise<string> {
-    // v4：Phase 1 新增真实 Chrome 通道 + 反自动化指纹参数 + 站点 cookie 预热（cf_clearance
-    // 随基准 profile 被 Phase 2 拷贝继承）；旧哨兵 profile 换名强制重建。
+    // v4：Phase 1 新增真实 Chrome 通道 + 反自动化指纹参数；旧哨兵 profile 换名强制重建。
     // ⚠️ 哨兵按管理器隔离（v4-<managerId>）：各驱动的 prepareProfile 预配置不同
     // （TM 需要 fileAccess=true，ScriptCat 需要 firstShowDeveloperMode 预写），
     // 共用哨兵会让后切换的管理器跳过自己的预配置（实测：ScriptCat 哨兵残留 →
@@ -370,9 +368,6 @@ export async function baseProfileReady(dir: string): Promise<string> {
     await enableUserScriptsAccess(ctx1, extensionId)
     // 管理器自身配置预配置（TM legacy/fileAccess 等）：写入基准 profile，Phase 2 拷贝后生效
     await resolveManager().prepareProfile?.(ctx1, extensionId)
-    // 站点 cookie 预热：Phase 1 过一次盾（cf_clearance 持久化进基准 profile），
-    // Phase 2 每用例拷贝即继承——同通道同 UA 同指纹，cookie 绑定有效
-    await warmSiteCookie(ctx1)
     dumpTabs(ctx1, 'Phase 1 权限预配置完成')
     await ctx1.close()
     fs.writeFileSync(sentinel, new Date().toISOString())
@@ -450,15 +445,6 @@ export interface SharedSession {
     extensionId: string
 }
 
-/** 等待脚本首裁后挑战页重新渲染（挑战页上脚本同样注入，通过后新文档会重新注入）。 */
-async function waitChallengeAndSettle(page: Page): Promise<void> {
-    if (!(await isChallengePage(page))) return
-    console.log('[fixtures] 共享会话首载遇 Cloudflare 挑战，等待通过…')
-    if (!(await waitChallengeCleared(page))) {
-        throw new Error('Cloudflare 挑战未通过（有头模式可人工点选验证框）')
-    }
-}
-
 /** 共享会话套件入口（用例侧：testSharedScript + describe.configure({ mode: 'serial' })）。
  *  ⚠️ worker 级 fixture 必须声明在 extend 的第二个泛型段（worker fixtures），与 test 段分开 */
 export const testSharedScript = base.extend<{}, { sharedSession: SharedSession; extensionId: string }>({
@@ -512,11 +498,10 @@ export const testSharedScript = base.extend<{}, { sharedSession: SharedSession; 
             }
             // ⚠️ 标签页配额 ≤ 1：复用启动自带的初始页面（about:blank），不另开 newPage
             page = context!.pages()[0] ?? (await context!.newPage())
-            // 有目标站点的项目：首次且唯一一次站点加载（挑战兜底）；无站点项目跳过
-            if (TARGET_SITE) {
-                await step(`goto ${TARGET_SITE}`, async () => {
-                    await page!.goto(TARGET_SITE, { waitUntil: 'domcontentloaded' })
-                    await waitChallengeAndSettle(page!)
+            // 有目标站点的项目：首次且唯一一次站点加载；无站点项目跳过
+            if (getTargetSite()) {
+                await step(`goto ${getTargetSite()}`, async () => {
+                    await page!.goto(getTargetSite(), { waitUntil: 'domcontentloaded' })
                 })
             }
             await use({ context: context!, page: page!, extensionId })

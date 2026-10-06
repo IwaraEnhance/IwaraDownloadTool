@@ -36,6 +36,14 @@ function deriveTargetSite(mata: Mata.Root): string | undefined {
 
 let cached: { mata: Mata.Root; targetSite: string | undefined } | undefined
 
+/**
+ * 目标站点（E2E_SITE_URL 可覆盖；项目未声明 targetSite 且 include/match 无法
+ * 推导 = 空串）。单文件模块级常量会在 CLI 环境读取前求值，故用惰性 getter。
+ */
+export function getTargetSite(): string {
+    return process.env.E2E_SITE_URL ?? mataInfo().targetSite ?? ''
+}
+
 /** 读 mata.json（同进程记忆化）；结构问题抛人类可读错误 */
 export function mataInfo(): { mata: Mata.Root; e2e: Mata.E2E; targetSite: string | undefined } {
     if (cached) return { mata: cached.mata, e2e: cached.mata.e2e ?? {}, targetSite: cached.targetSite }

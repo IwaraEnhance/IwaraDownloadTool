@@ -1,7 +1,7 @@
 /**
  * Chrome 显示模式开关 —— 不依赖 @playwright/test。
  *
- * 默认**有头**窗口（本机调试可旁观、live 站点过盾更接近真人）；`E2E_HEADLESS=1`
+ * 默认**有头**窗口（本机调试可旁观）；`E2E_HEADLESS=1`
  * （或 true/yes）切无头：CI / 无显示服务器必须用。
  *
  * ⚠️ 跨平台实证（2026-10-02）：launchPersistentContext 的 `headless` 选项**默认 true**
@@ -25,7 +25,7 @@ export function displayOptions(value = process.env.E2E_HEADLESS): DisplayOptions
 /**
  * 启动通道（Playwright 官方「Google Chrome & Microsoft Edge」章节）：
  * Playwright 缺省发开源 Chromium 构建——Cloudflare 等风控对自动化构建指纹最敏感；
- * `channel: 'chrome'` 用本机真实品牌 Chrome（真实 UA/字体/编解码器/组件），过盾更接近真人。
+ * `channel: 'chrome'` 用本机真实品牌 Chrome（真实 UA/字体/编解码器/组件）。
  * `E2E_BROWSER=chromium` 可切回开源 Chromium（扩展兼容性排查用）。
  */
 export function browserChannel(value = process.env.E2E_BROWSER): 'chrome' | 'chromium' {

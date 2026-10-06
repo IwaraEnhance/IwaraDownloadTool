@@ -15,7 +15,7 @@
  */
 import { expect } from '@playwright/test'
 import { testSharedScript as test } from '../helpers/fixtures'
-import { TARGET_SITE } from '../helpers/challenge'
+import { getTargetSite } from '../helpers/mataInfo'
 
 /** 本项目守卫标记键名（与 src/core/mutex.ts 的 unsafeWindow.<Key> 赋值行保持一致） */
 const GUARD_KEY = 'IwaraDownloadTool'
@@ -23,6 +23,7 @@ const GUARD_KEY = 'IwaraDownloadTool'
 test.describe.configure({ mode: 'serial' })
 
 test('冒烟：脚本安装后应在目标站点执行（mutex 守卫 + UI 挂载）', async ({ sharedSession }) => {
+    const TARGET_SITE = getTargetSite()
     const page = sharedSession.page
     // 自导航回站点：不依赖文件执行顺序（本地宿主页用例可能先执行并改页位置）
     if (!page.url().startsWith(TARGET_SITE)) {

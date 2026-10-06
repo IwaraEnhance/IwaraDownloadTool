@@ -34,7 +34,7 @@
 import { expect, type Page } from '@playwright/test'
 import { testSharedScript as test, managerOptionsUrl } from '../helpers/fixtures'
 import { resolveManager } from '../managers'
-import { TARGET_SITE, isChallengePage, waitChallengeCleared } from '../helpers/challenge'
+import { getTargetSite } from '../helpers/mataInfo'
 import { diagPage, fmtDiag } from '../helpers/diag'
 
 /** 脚本 GM 存储的物理键名（迁移操作面） */
@@ -118,11 +118,11 @@ test('迁移：升级路径下 aria2track-queue-split 静默执行（无 alert�
     // SW 消息总线协议是 ScriptCat 实现细节（见文件头注）：TM 下跳过而非跑挂
     test.skip(resolveManager().id !== 'scriptcat', 'SW 消息总线协议为 ScriptCat 特有（TM 无此 action/RValue 协议）；数据转换矩阵由单测全覆盖')
     test.setTimeout(240_000)
+    const TARGET_SITE = getTargetSite()
     const page = sharedSession.page
     const extId = sharedSession.extensionId
     if (!page.url().startsWith(TARGET_SITE)) {
         await page.goto(TARGET_SITE, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-        if (await isChallengePage(page)) await waitChallengeCleared(page)
     }
     // 等主脚本装配（守卫标记）——迁移在真实主链路上驱动。
     // 回调容错：迁移成功后主脚本会 location.reload()，导航瞬间 evaluate 会抛
@@ -173,10 +173,6 @@ test('迁移：升级路径下 aria2track-queue-split 静默执行（无 alert�
 
     // ── 阶段 C：reload 站点页（主脚本重装配 → 迁移执行）──
     await page.goto(TARGET_SITE, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    if (await isChallengePage(page)) {
-        console.log('[mig] reload 遭遇 Cloudflare 挑战，等待通过…')
-        await waitChallengeCleared(page)
-    }
     console.log(`[mig] reload 完成: ${fmtDiag(await diagPage(page))}`)
     await expect
         .poll(
@@ -229,7 +225,6 @@ test('迁移：升级路径下 aria2track-queue-split 静默执行（无 alert�
     // 下游拿到与首装等价的干净状态；version 无需处理（firstRun 全清）。
     await store2.set('isFirstRun', true)
     await page.goto(TARGET_SITE, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    if (await isChallengePage(page)) await waitChallengeCleared(page)
     await expect
         .poll(
             async () => {

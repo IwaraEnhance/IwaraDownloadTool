@@ -16,8 +16,13 @@ import { createGMHostServer } from '../install/common'
 
 test.describe.configure({ mode: 'serial' })
 
-/** 实例仓表达式（evaluate 内使用） */
-const topStore = 'window.__e2eProbes'
+/**
+ * 探针实例存于页内 __e2eProbes.webLocks 仓（跨标签页各持实例）。
+ * evaluate 一律回调形态：锁名经 arg 传入，不在 Node 侧拼接 JS 字符串
+ * （曾触发 CodeQL js/bad-code-sanitization 逐处告警）。
+ * ⚠️ Playwright 只序列化回调函数体（Node 侧闭包不可用），仓取用内联进各回调：
+ *   顶层 = `(window as any).__e2eProbes?.webLocks?.[id]`。
+ */
 
 test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证）', () => {
     let hostUrl = ''
@@ -73,7 +78,7 @@ test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证�
         const page = sharedSession.page
         await gotoHost(page)
 
-        const probeSupported = await page.evaluate(`${topStore}.webLockProbe.supported`)
+        const probeSupported = await page.evaluate(() => (window as any).__e2eProbes?.webLockProbe?.supported)
         const mainWorldReachable = await locksReachable(page)
         // 实证值落报告（本次关注点：ScriptCat 沙箱到底可不可达——此前无实证输出误导排查）
         console.log(`[weblock-probe] probeSupported=${probeSupported} mainWorld=${mainWorldReachable}`)
@@ -87,7 +92,7 @@ test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证�
             mainWorldReachable
         )
         // tryAcquire 实测（区分「属性存在」与「运行时可用」）：500ms 竞速窗口内 granted=true
-        const tryAcquired = await page.evaluate(`${topStore}.webLockProbe.tryAcquire('sc-verify-' + ${Date.now()})`)
+        const tryAcquired = await page.evaluate((ts) => (window as any).__e2eProbes.webLockProbe.tryAcquire('sc-verify-' + ts), Date.now())
         console.log(`[weblock-probe] tryAcquire=${tryAcquired} (probeSupported=${probeSupported})`)
         test.info().annotations.push({
             type: 'weblock-tryacquire',
@@ -108,7 +113,7 @@ test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证�
         test.setTimeout(90_000)
         const page = sharedSession.page
         await gotoHost(page)
-        if (!(await page.evaluate(`${topStore}.webLockProbe.supported`))) {
+        if (!(await page.evaluate(() => (window as any).__e2eProbes?.webLockProbe?.supported))) {
             test.info().annotations.push({ type: 'skip-reason', description: 'navigator.locks 不可达（降级 GM 后端），跨标签仲裁不适用' })
             test.skip(true, 'Web Locks 不可达，GM 后端仲裁由 gmBehavior.spec 锚定')
         }
@@ -117,8 +122,10 @@ test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证�
         const lockName = `e2e-weblock-cross-tab-${Date.now()}`
         // 走 GMLock 完整产品路径（双后端门面）：acquireReady（真实 navigator.locks
         // 仲裁落预取窗口）→ 同步 acquire 消费窗口 → release 显式释放
-        await page.evaluate(`(${topStore}.webLocks ??= {})`)
-        await page.evaluate(`(${topStore}.webLocks.A = new ${topStore}.GMLock('tab-A'))`)
+        await page.evaluate(() => {
+            const probes = (window as any).__e2eProbes
+            ;(probes.webLocks ??= {}).A = new probes.GMLock('tab-A')
+        })
         const second = await sharedSession.context.newPage()
         try {
             await second.goto(hostUrl, { waitUntil: 'domcontentloaded' })
@@ -132,28 +139,34 @@ test.describe('Web Locks 沙箱可达性（双后端 GMLock 后端选择实证�
                     { timeout: 30_000 }
                 )
                 .toEqual({ marked: 'ready', exposed: true })
-            await second.evaluate(`(${topStore}.webLocks ??= {})`)
-            await second.evaluate(`(${topStore}.webLocks.B = new ${topStore}.GMLock('tab-B'))`)
+            await second.evaluate(() => {
+                const probes = (window as any).__e2eProbes
+                ;(probes.webLocks ??= {}).B = new probes.GMLock('tab-B')
+            })
 
             // 标签 A：预取（真实浏览器仲裁）→ granted → 同步 acquire 成功
-            await page.evaluate(`(function(){ const l = ${topStore}.webLocks.A; return l.acquireReady(${JSON.stringify(lockName)}) })()`)
-            const aAcquired = await page.evaluate(`(function(){ const l = ${topStore}.webLocks.A; return l.acquire(${JSON.stringify(lockName)}, 60_000) })()`)
+            await page.evaluate((n) => (window as any).__e2eProbes.webLocks.A.acquireReady(n), lockName)
+            const aAcquired = await page.evaluate((n) => (window as any).__e2eProbes.webLocks.A.acquire(n, 60_000), lockName)
             expect(aAcquired, '标签 A 应获锁（浏览器仲裁，锁空闲）').toBe(true)
-            expect(await page.evaluate(`(function(){ const l = ${topStore}.webLocks.A; return l.isHeld(${JSON.stringify(lockName)}) })()`), '标签 A 复核应持有').toBe(true)
+            expect(await page.evaluate((n) => (window as any).__e2eProbes.webLocks.A.isHeld(n), lockName), '标签 A 复核应持有').toBe(true)
 
             // 标签 B：同名锁预取应 denied（浏览器单点仲裁，A 持锁中）→ 同步 acquire 失败
-            await second.evaluate(`(function(){ const l = ${topStore}.webLocks.B; return l.acquireReady(${JSON.stringify(lockName)}) })()`)
-            const bAcquired = await second.evaluate(`(function(){ const l = ${topStore}.webLocks.B; return l.acquire(${JSON.stringify(lockName)}, 60_000) })()`)
+            await second.evaluate((n) => (window as any).__e2eProbes.webLocks.B.acquireReady(n), lockName)
+            const bAcquired = await second.evaluate((n) => (window as any).__e2eProbes.webLocks.B.acquire(n, 60_000), lockName)
             expect(bAcquired, '标签 B 同名锁应 denied（跨标签页浏览器仲裁）').toBe(false)
 
             // 标签 A 释放 → 标签 B 预取翻转为 granted（跨标签页传播）
-            await page.evaluate(`(function(){ const l = ${topStore}.webLocks.A; return l.release(${JSON.stringify(lockName)}) })()`)
+            await page.evaluate((n) => (window as any).__e2eProbes.webLocks.A.release(n), lockName)
             await expect
-                .poll(async () => second.evaluate(`(function(){ const l = ${topStore}.webLocks.B; l.acquireReady(${JSON.stringify(lockName)}); return l.acquire(${JSON.stringify(lockName)}, 60_000) })()`), { timeout: 10_000 })
+                .poll(async () => second.evaluate((n) => {
+                    const b = (window as any).__e2eProbes.webLocks.B
+                    b.acquireReady(n)
+                    return b.acquire(n, 60_000)
+                }, lockName), { timeout: 10_000 })
                 .toBe(true)
         } finally {
             // 恢复单标签惯例：显式释放残余锁并关闭临时第二页
-            await page.evaluate(`${topStore}.webLocks?.A?.release(${JSON.stringify(lockName)})`).catch(() => undefined)
+            await page.evaluate((n) => (window as any).__e2eProbes?.webLocks?.A?.release(n), lockName).catch(() => undefined)
             await second.close().catch(() => undefined)
         }
     })

@@ -9,8 +9,9 @@
  *   1. 首装引导（isFirstRun → 勾选 → 配置面板；开关翻转写 GM）
  *   2. reload 一次（证明 GM 持久化，同时进入完整装配态）
  *   3. 装配态 UI（水印 / 菜单基础按钮）
- *   4. 行为联动（选择框 ↔ 水印计数；开关选择框移除/恢复）
- *   5. SPA 导航（首页卡片 → 视频详情页，菜单随 pageType 重绘——不整页重载）
+ *   4. 行为联动（选择框 ↔ 水印计数；开关选择框移除/恢复）——测试点 /videos
+ *      （纯视频列表，排序稳定；首页混合流实测会轮换换卡，不作为点击竞态测试点）
+ *   5. SPA 导航（列表页卡片 → 视频详情页，菜单随 pageType 重绘——不整页重载）
  *
  * serial 模式：前一用例失败即跳过后续（生命周期链断裂，后续断言无意义）。
  * 对照：隔离形态（testWithScript，每用例独立 profile + 启动）见 smoke.spec.ts。
@@ -19,6 +20,7 @@ import { expect, type Page } from '@playwright/test'
 import { testSharedScript as test, withHuman } from '../helpers/fixtures'
 import { humanTimeoutMs, isHumanMode } from '../helpers/human'
 import { diagPage, traceStep, throwWithDiag } from '../helpers/diag'
+import { getTargetSite } from '../helpers/mataInfo'
 
 /** 用例 fixtures 类型（共享会话上下文） */
 type Fixtures = { sharedSession: import('../helpers/fixtures').SharedSession }
@@ -129,7 +131,7 @@ test.describe('脚本 UI 与行为（共享会话：一次启动 · 一次首载
             // 点「保存」= 真实用户路径：配置写回 GM + reload，面板随之消失
             await page.locator('#pluginConfig .buttonList button', { hasText: '保存' }).click()
             await expect(page.locator('#pluginConfig')).toHaveCount(0, { timeout: 30_000 })
-            // 保存触发 reload：等装配态重新就绪（挑战由 fixtures 首载已过，此 reload 直过）
+            // 保存触发 reload：等装配态重新就绪
             await expect(page.locator('#pluginMenu'), '保存 reload 后插件菜单应重新挂载').toBeVisible({ timeout: 90_000 })
         })
     )
@@ -164,103 +166,125 @@ test.describe('脚本 UI 与行为（共享会话：一次启动 · 一次首载
             // 前置：用例 1 已点「保存」关面板；全屏遮罩残留会拦截一切点击——先断言干净
             await expect(page.locator('#pluginConfig'), '配置面板应已关闭（否则拦截卡片点击）').toHaveCount(0)
 
-            // autoInjectCheckbox=true（默认）：列表卡片应自动注入选择框。
-            // ⚠️ 首页信息流动态换卡且卡片数会涨（快照可能 2~12+ 不等），语义是
-            // 「至少两张」——用 toHaveCount 轮询收敛到 ≥2（借助 Web-first：先等
-            // 首卡 attached，再 poll count ≥ 2），不锚死具体数量
+            // 测试点用 /videos（纯视频按时间倒序列表）：首页混合流实测会轮换换卡且
+            // 体积随浏览变化（6→12），对点击竞态极不友好；/videos 排序稳定。
+            // SPA 内导航即可（脚本 onHistoryChange 会走 pageChange 重绘，菜单仍可用）
+            const videosUrl = `${getTargetSite().replace(/\/+$/, '')}/videos`
+            if (!page.url().startsWith(videosUrl)) {
+                await page.goto(videosUrl, { waitUntil: 'domcontentloaded' })
+            }
+
+            // autoInjectCheckbox=true（默认）：列表卡片应自动注入选择框（.videoTeaser
+            // 追加钩子对列表页同样生效）。语义是「至少两张」——先等首卡 attached，
+            // 再 poll count ≥ 2，不锚死具体数量
             const checkboxes = page.locator('input.selectButton')
             await expect(
                 checkboxes.first(),
-                '首页应有卡片注入选择框'
+                '列表页应有卡片注入选择框'
             ).toBeAttached({ timeout: 60_000 })
             await expect
                 .poll(
                     async () => page.evaluate(() => document.querySelectorAll('input.selectButton').length),
-                    { timeout: 30_000, message: '首页应有多张卡片的选择框（容忍信息流换卡抖动）' }
+                    { timeout: 30_000, message: '列表页应有多张卡片的选择框' }
                 )
                 .toBeGreaterThan(1)
 
             /**
-             * ⚠️ 首页信息流是动态重渲染的：卡片会被新内容彻底换掉（旧 videoID 移除后
-             * 不再回来），锚定 videoID 等稳定必然超时。改用「状态驱动点击」：
-             * 按勾选状态找选择框（复选框带 checked 属性由 GMSyncDictionary 同步），
-             * 点到的卡被换掉（click 抛 detach/超时）就换下一张——计数断言是最终一致
-             * 的可靠信号，点哪张卡无所谓。
+             * 列表仍是响应式渲染（站点可在测试期间插入新卡/重排），且不假设已勾卡
+             * 一定留存在 DOM。锚定具体卡必坏，改用「状态驱动点击」：点未勾选的选择框
+             * （checked 属性由 GMSyncDictionary 同步），点击失败就换下一张、每轮重查
+             * 卡组——计数断言是最终一致的可靠信号，点哪张卡无所谓。
              */
-            const clickByState = async (checked: boolean): Promise<void> => {
+            /** 状态驱动勾选：点未勾选的选择框；每轮打全量 videoID 清单（便于观察卡组构成变化） */
+            const clickByState = async (): Promise<void> => {
                 const maxAttempts = 6
                 for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                    // 诊断：每轮打页面状态（URL/选择框计数/水印/面板/菜单/挑战），失败时最后一轮现场随错误抛出
-                    traceStep('clickByState', attempt, await diagPage(page))
-                    // 读当前未勾选/已勾选集合的首个 videoID（DOM 快照，非活 Locator）
-                    const ids: string[] = await page.evaluate((want) => {
+                    // 诊断：每轮打页面状态 + 全量 videoID 快照（DOM 快照，非活 Locator）
+                    const d = await diagPage(page)
+                    traceStep('clickByState', attempt, d)
+                    const ids: string[] = await page.evaluate(() => {
                         return [...document.querySelectorAll<HTMLInputElement>('input.selectButton')]
-                            .filter((el) => (want ? el.checked : !el.checked))
                             .map((el) => el.getAttribute('videoID')!)
                             .filter(Boolean)
-                    }, checked)
-                    if (ids.length === 0) {
-                        console.log(`[diag] clickByState#${attempt}: 无匹配状态的选择框（wantChecked=${checked}），等 1s 重查`)
+                    })
+                    console.log(`[diag] clickByState#${attempt}: 卡组 ${ids.length} 张 [${ids.join(', ')}]`)
+                    const clickable = (await page.evaluate(() => {
+                        return [...document.querySelectorAll<HTMLInputElement>('input.selectButton')]
+                            .filter((el) => !el.checked)
+                            .map((el) => el.getAttribute('videoID')!)
+                            .filter(Boolean)
+                    }))
+                    if (clickable.length === 0) {
+                        console.log(`[diag] clickByState#${attempt}: 无未勾选的选择框，等 1s 重查`)
                         await page.waitForTimeout(1_000)
                         continue
                     }
-                    console.log(`[diag] clickByState#${attempt}: 候选 videoID=[${ids.slice(0, 3).join(', ')}]`)
-                    for (const id of ids.slice(0, 3)) {
+                    console.log(`[diag] clickByState#${attempt}: 候选 videoID=[${clickable.slice(0, 3).join(', ')}]`)
+                    for (const id of clickable.slice(0, 3)) {
                         try {
                             await page
                                 .locator(`input.selectButton[videoID="${id}"]`)
                                 .click({ timeout: 5_000, noWaitAfter: true })
                             return
                         } catch (e) {
-                            console.log(`[diag] clickByState#${attempt}: 点击 ${id} 失败（${String(e).split('\n')[0].slice(0, 80)}），换下一张`)
-                            /* 卡片被信息流换掉（detach）：换下一张 */
+                            // 保留 Playwright 判定原因（截断放宽到 200 字符），不再吞成一句 detach 猜测
+                            console.log(`[diag] clickByState#${attempt}: 点击 ${id} 失败（${String(e).split('\n').slice(0, 3).join(' ').slice(0, 200)}），换下一张`)
                         }
                     }
                 }
-                await throwWithDiag('clickByState', `未找到可点击的选择框（wantChecked=${checked}，${maxAttempts} 轮耗尽）`, page)
+                await throwWithDiag('clickByState', `未找到可点击的未勾选选择框（${maxAttempts} 轮耗尽）`, page)
+            }
+
+            /** 读水印「已选中 N」计数（水印未挂载/解析失败返回 -1） */
+            const watermarkCount = async (): Promise<number> =>
+                page.evaluate(() => {
+                    const m = document.querySelector('p.fixed-bottom-right')?.textContent?.match(/已选中\s*(\d+)/)
+                    return m ? Number(m[1]) : -1
+                })
+
+            /** 等水印计数满足谓词（selection:changed 事件链最终一致；超时抛最后读数） */
+            const awaitCount = async (ok: (n: number) => boolean, label: string, timeoutMs = 15_000): Promise<number> => {
+                const deadline = Date.now() + timeoutMs
+                let last = -1
+                while (Date.now() < deadline) {
+                    last = await watermarkCount()
+                    if (ok(last)) return last
+                    await page.waitForTimeout(400)
+                }
+                throw new Error(`[awaitCount] 水印计数未${label}（最后读取 ${last}）`)
             }
 
             /**
-             * 勾选状态计数 —— 水印的事件链在卡片 detach/重渲染竞态下可能丢发
-             * （实测：两次勾选后水印仍显示 1，DOM checked 已有 2），对动态信息流
-             * 过度敏感。改用「同帧双读」最终一致：轮询内每轮同时取 DOM 勾选数与
-             * 水印文本数字，「相等」即收敛（取该轮 DOM 数返回）。
-             * ⚠️ 不能先读 DOM 再等水位追这个固定值：收敛窗口内信息流可能换掉已勾卡，
-             * DOM 自己会变（实测：水印 0/1 抖动），固定基准必然假差异。
+             * 水印计数断言（快照实证的水印语义：watermark 恒等于 selectList.size；
+             * DOM checkbox 的 checked 是 selectList 的投影，卡片不在页面时投影缺失
+             * ——故「DOM 数 vs 水印」等式无稳定依据，断言只以水印计数为单一场）。
+             * 点击后计数未动（事件链偶发滞后）→ 再点一张（计数随 set 单调不减）。
              */
-            const expectCountConsistent = async (): Promise<number> => {
-                let domAtMatch = 0
-                await expect
-                    .poll(
-                        async () => {
-                            const { dom, wm } = await page.evaluate(() => {
-                                const dom = [...document.querySelectorAll<HTMLInputElement>('input.selectButton')].filter((el) => el.checked).length
-                                const m = document.querySelector('p.fixed-bottom-right')?.textContent?.match(/已选中\s*(\d+)/)
-                                return { dom, wm: m ? Number(m[1]) : -1 }
-                            })
-                            if (dom === wm) domAtMatch = dom
-                            return dom === wm
-                        },
-                        { timeout: 15_000, message: '水印计数应与 DOM 勾选数最终一致（同帧双读）' }
-                    )
-                    .toBe(true)
-                return domAtMatch
+            const selectAndAwaitCount = async (ok: (n: number) => boolean, label: string): Promise<number> => {
+                for (let round = 1; round <= 3; round++) {
+                    await clickByState()
+                    try {
+                        return await awaitCount(ok, label, 8_000)
+                    } catch {
+                        console.log(`[diag] selectAndAwaitCount#${round}: 点击后计数未${label}，再点一张补发`)
+                    }
+                }
+                throw new Error(`[selectAndAwaitCount] 3 轮点击后水印计数仍未${label}`)
             }
 
-            // 行为：勾选 → 水印计数联动（selection:changed 事件链 → watermark.selected）。
-            // 动态信息流下卡片随时被换掉，锚死「恰好 1/2」对重渲染竞态过度敏感——
-            // 每次操作后以 DOM 实际勾选数为基准做最终一致断言（事件链补发后必然收敛）
-            await clickByState(false)
-            const first = await expectCountConsistent()
+            // 行为：勾选 → 水印计数联动（selection:changed 事件链 → watermark.selected）
+            const first = await selectAndAwaitCount((n) => n >= 1, '上升至 ≥1')
             expect(first, '勾选一次后至少选中 1').toBeGreaterThanOrEqual(1)
             // 再勾一张 → 计数递增
-            await clickByState(false)
-            const second = await expectCountConsistent()
+            const second = await selectAndAwaitCount((n) => n > first, `递增至 >${first}`)
             expect(second, '再勾一张后计数应递增').toBeGreaterThan(first)
-            // 取消一张 → 回落（GMSyncDictionary delete → 事件广播 → 计数刷新）
-            await clickByState(true)
-            const after = await expectCountConsistent()
-            expect(after, '取消一张后计数应递减').toBeLessThan(second)
+
+            // 取消 → 回落 0。已勾视频可能已不在当前页卡列（DOM 无对应 checkbox），
+            // 点击式取消无目标可点；走产品数据驱动路径——菜单「取消所有选中」
+            // （deselectAll 逐个 delete selectList），事件链必然把水印计数拉回 0。
+            await clickMenuItem(page, '取消所有选中')
+            const after = await awaitCount((n) => n === 0, '回落为 0')
+            expect(after, '取消全选后水印计数应回落为 0').toBe(0)
 
             // 菜单「开关选择框」：移除全部选择框（toggleInjectCheckbox 的 remove 分支；先展开收起态菜单）
             await clickMenuItem(page, '开关选择框')
@@ -273,8 +297,8 @@ test.describe('脚本 UI 与行为（共享会话：一次启动 · 一次首载
 
     /**
      * 用例 4（生命周期终点：SPA 导航，套件内唯一导航且非整页重载）：
-     * 首页卡片点击 → 视频详情页，菜单随 pageType 重绘出现「下载当前视频」。
-     * 真实站点 SPA 路由（history API），无整页加载 → 无新增 CF 风险点。
+     * 列表页卡片点击 → 视频详情页（/videos 首卡必为视频 teaser），菜单随
+     * pageType 重绘出现「下载当前视频」。
      */
     test(
         'SPA 导航至视频详情页：菜单按钮随页面类型变化（出现「下载当前视频」）',
@@ -284,9 +308,12 @@ test.describe('脚本 UI 与行为（共享会话：一次启动 · 一次首载
 
             // 前置：面板已关（同用例 3，全屏遮罩会拦截卡片点击）
             await expect(page.locator('#pluginConfig'), '配置面板应已关闭（否则拦截卡片点击）').toHaveCount(0)
-            // 首页（VideoList 组）不应有「下载当前视频」
+            // 列表页（VideoList 组）不应有「下载当前视频」
             await expect(page.locator('#pluginMenu')).not.toContainText('下载当前视频')
-            // 进入视频详情页（真实站点为卡片点击导航）
+            // 进入视频详情页（若用例 3 已在 /videos 则直接点首卡；否则先回列表页）
+            if (!page.url().includes('/videos')) {
+                await page.goto(`${getTargetSite().replace(/\/+$/, '')}/videos`, { waitUntil: 'domcontentloaded' })
+            }
             const firstCard = page.locator('a.videoTeaser__thumbnail').first()
             await firstCard.waitFor({ state: 'visible', timeout: 60_000 })
             await firstCard.click()

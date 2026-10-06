@@ -4,17 +4,15 @@ import { createGMHostServer } from '../install/common'
 
 test.describe.configure({ mode: 'serial' })
 
-/** 实例仓取用（跨 evaluate 稳定：实例存 __e2eProbes.dictionaries/locks 仓，表达式直取）。⚠️ 纯 JS——这些字符串会被 evaluate 在浏览器里执行 */
-const topStore = 'window.__e2eProbes'
-const frameStore = "(document.querySelector('#peer')!.contentWindow as any).__e2eProbes"
+/**
+ * 探针实例存于页内 __e2eProbes.dictionaries/locks 仓（顶层 + #peer 子帧）。
+ * 全文件 evaluate 一律回调形态：实例名/锁名经 arg 传入，不在 Node 侧拼接 JS 字符串
+ * （字符串拼接形态曾触发 CodeQL js/bad-code-sanitization 逐处告警）。
+ * ⚠️ Playwright 只把回调函数体序列化进浏览器执行（Node 侧闭包不可用），仓取用
+ * 逻辑必须内联进各回调；下列声明仅作文档与 Node 侧类型参考，不供 evaluate 引用。
+ */
 
-/** 字典实例表达式（evaluate 内使用；仓缺失时显式报错） */
-const topDict = (name: string): string => `(function(){ const d = ${topStore}.dictionaries[${JSON.stringify(name)}]; if (!d) throw new Error('dict ${name} not ready'); return d })()`
-const frameDict = (name: string): string => `(function(){ const w = document.querySelector('#peer').contentWindow; const d = w.__e2eProbes.dictionaries[${JSON.stringify(name)}]; if (!d) throw new Error('frame dict ${name} not ready'); return d })()`
-
-/** 锁实例表达式 */
-const topLock = (id: string): string => `(function(){ const l = ${topStore}.locks[${JSON.stringify(id)}]; if (!l) throw new Error('lock ${id} not ready'); return l })()`
-const frameLock = (id: string): string => `(function(){ const w = document.querySelector('#peer').contentWindow; const l = w.__e2eProbes.locks[${JSON.stringify(id)}]; if (!l) throw new Error('frame lock ${id} not ready'); return l })()`
+/** 回调内顶层仓取字典实例的原地形态：((window as any).__e2eProbes?.dictionaries?.[name] ?? fail) */
 
 test.describe('GM 存储真行为（产品类 × 真实 ScriptCat，实例直挂形态）', () => {
     /** GM 宿主服务（beforeAll 起，afterAll 释放；套件内全部用例共用同一 URL） */
@@ -102,31 +100,58 @@ test.describe('GM 存储真行为（产品类 × 真实 ScriptCat，实例直挂
         const name = `e2e-dict-${Date.now()}`
 
         // ① 双实例创建（A 顶层、B 子帧）；A 经实例自身 onSet 挂事件收集（无 buffer 层）
-        await page.evaluate(`(${topStore}.dictionaries ??= {})[${JSON.stringify(name)}] = new ${topStore}.GMSyncDictionary(${JSON.stringify(name)}, [], (v) => typeof v === 'string' || typeof v === 'number')`)
-        await page.evaluate(`${topDict(name)}.onSet = function (k, v) { (this.__events ??= []).push({ type: 'set', key: k, value: v }) }`)
-        await page.evaluate(`(function(){ const w = document.querySelector('#peer').contentWindow; (w.__e2eProbes.dictionaries ??= {})[${JSON.stringify(name)}] = new w.__e2eProbes.GMSyncDictionary(${JSON.stringify(name)}, [], (v) => typeof v === 'string' || typeof v === 'number') })()`)
+        await page.evaluate((n) => {
+            const probes = (window as any).__e2eProbes
+            ;(probes.dictionaries ??= {})[n] = new probes.GMSyncDictionary(n, [], (v: unknown) => typeof v === 'string' || typeof v === 'number')
+        }, name)
+        await page.evaluate((n) => {
+            const d: any = (window as any).__e2eProbes?.dictionaries?.[n]
+            if (!d) throw new Error(`dict ${n} not ready`)
+            d.onSet = function (this: any, k: string, v: unknown) {
+                ;(this.__events ??= []).push({ type: 'set', key: k, value: v })
+            }
+        }, name)
+        await page.evaluate((n) => {
+            const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow
+            if (!w) throw new Error('#peer iframe 无 contentWindow')
+            ;((w as any).__e2eProbes.dictionaries ??= {})[n] = new (w as any).__e2eProbes.GMSyncDictionary(n, [], (v: unknown) => typeof v === 'string' || typeof v === 'number')
+        }, name)
 
         // ② B（子帧）set 两键（实例直调）
-        await page.evaluate(`${frameDict(name)}.set('r1', 'vr1')`)
-        await page.evaluate(`${frameDict(name)}.set('r2', 'vr2')`)
+        await page.evaluate((n) => {
+            const d: any = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow!.__e2eProbes?.dictionaries?.[n]
+            if (!d) throw new Error(`frame dict ${n} not ready`)
+            return d.set('r1', 'vr1')
+        }, name)
+        await page.evaluate((n) => {
+            const d: any = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow!.__e2eProbes?.dictionaries?.[n]
+            if (!d) throw new Error(`frame dict ${n} not ready`)
+            return d.set('r2', 'vr2')
+        }, name)
         await page.waitForTimeout(800)
 
         // ③ A（顶层）：实例自身 __events 应经真 remote 合并出 r1/r2 的 onSet
-        const events = await page.evaluate(`(${topDict(name)}).__events ?? []`) as Array<any>
+        const events = (await page.evaluate((n) => (window as any).__e2eProbes?.dictionaries?.[n]?.__events ?? [], name)) as Array<any>
         const setKeys = events.filter((e: any) => e.type === 'set').map((e: any) => e.key)
         expect(setKeys, `顶层实例应经真 remote 合并出 r1/r2（实收 ${JSON.stringify(events)}）`).toEqual(
             expect.arrayContaining(['r1', 'r2'])
         )
         // 快照一致：同存储域两实例最终一致（实例直读 entries）
-        const topSnap: [string, string][] = await page.evaluate(`[...${topDict(name)}.entries()]`)
+        const topSnap = await page.evaluate((n) => [...(window as any).__e2eProbes?.dictionaries?.[n].entries()], name)
         expect(Object.fromEntries(topSnap)).toEqual({ r1: 'vr1', r2: 'vr2' })
-        const frameSnap: [string, string][] = await page.evaluate(`[...${frameDict(name)}.entries()]`)
+        const frameSnap = await page.evaluate((n) => {
+            const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow
+            return [...(w as any).__e2eProbes?.dictionaries?.[n].entries()]
+        }, name)
         expect(Object.fromEntries(frameSnap)).toEqual({ r1: 'vr1', r2: 'vr2' })
 
         // ④ A（顶层）本地 set → B 视角 remote（反向同样成立）
-        await page.evaluate(`${topDict(name)}.set('top', 'vtop')`)
+        await page.evaluate((n) => (window as any).__e2eProbes?.dictionaries?.[n].set('top', 'vtop'), name)
         await page.waitForTimeout(800)
-        const frameSnapAfter: [string, string][] = await page.evaluate(`[...${frameDict(name)}.entries()]`)
+        const frameSnapAfter = await page.evaluate((n) => {
+            const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow
+            return [...(w as any).__e2eProbes?.dictionaries?.[n].entries()]
+        }, name)
         expect(Object.fromEntries(frameSnapAfter)).toEqual({ r1: 'vr1', r2: 'vr2', top: 'vtop' })
     })
 
@@ -142,8 +167,11 @@ test.describe('GM 存储真行为（产品类 × 真实 ScriptCat，实例直挂
         const lockName = `e2e-lock-${Date.now()}`
 
         // ① 顶层实例 A 创建并抢锁成功
-        await page.evaluate(`(${topStore}.locks ??= {}).A = new ${topStore}.GMLock('owner-A')`)
-        const aOk = await page.evaluate(`${topLock('A')}.acquire(${JSON.stringify(lockName)}, 60_000)`)
+        await page.evaluate(() => {
+            const probes = (window as any).__e2eProbes
+            ;(probes.locks ??= {}).A = new probes.GMLock('owner-A')
+        })
+        const aOk = await page.evaluate((args) => (window as any).__e2eProbes?.locks?.A.acquire(args.lockName, 60_000), { lockName })
         expect(aOk, '空闲锁 A（顶层）应抢占成功').toBe(true)
 
         // ② 传播等待：ScriptCat GM 存储写跨上下文可见有毫秒级延迟。
@@ -152,33 +180,44 @@ test.describe('GM 存储真行为（产品类 × 真实 ScriptCat，实例直挂
         //    与裸 raw 键轮询同效；B 的互斥断言由下一步 acquire 失败直接承载。
         await expect
             .poll(
-                async () => page.evaluate(`${topLock('A')}.isHeld(${JSON.stringify(lockName)})`),
+                async () => page.evaluate((args) => (window as any).__e2eProbes?.locks?.A.isHeld(args.lockName), { lockName }),
                 { timeout: 10_000 }
             )
             .toBe(true)
         // 子帧实例 B：acquire 应失败（A 的租约在场且未过期）
-        const bAcquired = await page.evaluate(`(function(){ const w = document.querySelector('#peer').contentWindow; ((w.__e2eProbes.locks ??= {}).B = new w.__e2eProbes.GMLock('owner-B')); return w.__e2eProbes.locks.B.acquire(${JSON.stringify(lockName)}, 60_000) })()`)
+        const bAcquired = await page.evaluate((args) => {
+            const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow as any
+            ;((w.__e2eProbes.locks ??= {}).B = new w.__e2eProbes.GMLock('owner-B'))
+            return w.__e2eProbes.locks.B.acquire(args.lockName, 60_000)
+        }, { lockName })
         expect(bAcquired, 'A 持有时 B（子帧）acquire 应失败').toBe(false)
 
         // ③ A 释放 → 等 B 视角可见空锁 → B 抢占（竞争消解的真实路径）
-        await page.evaluate(`${topLock('A')}.release(${JSON.stringify(lockName)})`)
+        await page.evaluate((args) => (window as any).__e2eProbes?.locks?.A.release(args.lockName), { lockName })
         // ⚠️ A 的 release 删除跨上下文传播到子帧有毫秒级延迟：B 直接 acquire 可能读到
         // 未传播的旧租约而失败——轮询直到 B 视角空锁可见（acquire 每轮实时读存储），
         // 这与产品调用方「acquire 失败后由调用方重试」的用法同构（acquireWait 留 test/）
         await expect
             .poll(
-                async () => page.evaluate(`(function(){ const l = ${frameLock('B')}; return l.acquire(${JSON.stringify(lockName)}, 60_000) })()`),
+                async () =>
+                    page.evaluate((args) => {
+                        const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow
+                        return (w as any)!.__e2eProbes?.locks?.B.acquire(args.lockName, 60_000)
+                    }, { lockName }),
                 { timeout: 10_000 }
             )
             .toBe(true)
         expect(true, 'A 释放后 B（子帧）应抢占成功（传播允许内）').toBe(true)
         // B 动作期间 A 复核：应让位（异地租约在场）
-        const aHeldAfter = await page.evaluate(`${topLock('A')}.isHeld(${JSON.stringify(lockName)})`)
+        const aHeldAfter = await page.evaluate((args) => (window as any).__e2eProbes?.locks?.A.isHeld(args.lockName), { lockName })
         expect(aHeldAfter, 'B 持有时 A 复核应让位（最后写入者胜出）').toBe(false)
         // ④ 非持有者 A 的 renew 不改变 B 的租约（owner/expires 均不变：B 仍 isHeld）
-        const aRenewResult = await page.evaluate(`${topLock('A')}.renew(${JSON.stringify(lockName)}, 60_000)`)
+        const aRenewResult = await page.evaluate((args) => (window as any).__e2eProbes?.locks?.A.renew(args.lockName, 60_000), { lockName })
         expect(aRenewResult, '非持有者 renew 应返回 false').toBe(false)
-        const bStillHeld = await page.evaluate(`${frameLock('B')}.isHeld(${JSON.stringify(lockName)})`)
+        const bStillHeld = await page.evaluate((args) => {
+            const w = (document.querySelector('#peer') as HTMLIFrameElement).contentWindow
+            return (w as any)!.__e2eProbes?.locks?.B.isHeld(args.lockName)
+        }, { lockName })
         expect(bStillHeld, 'A renew 后 B 仍持有（租约未被改变）').toBe(true)
     })
 })

@@ -9,7 +9,7 @@
  *   循环失败抛错前带上最后一次现场，替代"干等到超时"。
  */
 
-/** 页面关键状态快照（全部容错：挑战页/导航中/节点缺失时逐项返回 null） */
+/** 页面关键状态快照（全部容错：导航中/节点缺失时逐项返回 null） */
 export interface PageDiag {
     url: string
     /** 选择框总数与已勾选数 */
@@ -20,8 +20,6 @@ export interface PageDiag {
     configPanel: boolean
     /** 插件菜单是否可见 */
     menuVisible: boolean
-    /** 是否 Cloudflare 挑战页 */
-    challenge: boolean
 }
 
 /** 采集页面诊断快照（任一子项失败不影响其余，全部容错） */
@@ -48,15 +46,7 @@ export async function diagPage(page: import('@playwright/test').Page): Promise<P
     )
     const configPanel = await pick(() => page.locator('#pluginConfig').count().then((n) => n > 0), false)
     const menuVisible = await pick(() => page.locator('#pluginMenu').isVisible(), false)
-    const challenge = await pick(
-        () =>
-            page.evaluate(() => {
-                const text = document.body?.innerText?.slice(0, 4000) ?? ''
-                return /Performing security verification|Verify you are human|Just a moment/i.test(text)
-            }),
-        false
-    )
-    return { url, checkboxes, watermark, configPanel, menuVisible, challenge }
+    return { url, checkboxes, watermark, configPanel, menuVisible }
 }
 
 /** 单行格式化诊断快照（便于日志 grep：`[diag] ...`） */
@@ -64,8 +54,7 @@ export function fmtDiag(d: PageDiag): string {
     return (
         `url=${d.url} | 选择框 ${d.checkboxes.checked}/${d.checkboxes.total} 已勾 | ` +
         `水印=${d.watermark === null ? '(无)' : JSON.stringify(d.watermark)} | ` +
-        `面板=${d.configPanel ? '开' : '关'} 菜单=${d.menuVisible ? '可见' : '不可见'} ` +
-        `挑战=${d.challenge ? '是' : '否'}`
+        `面板=${d.configPanel ? '开' : '关'} 菜单=${d.menuVisible ? '可见' : '不可见'}`
     )
 }
 
