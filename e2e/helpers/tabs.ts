@@ -6,8 +6,8 @@
  *    openerId/openerUrl——扩展 SW 经 chrome.tabs.create 开的标签页、SW 自身启停、
  *    现存页面清单一网打尽，直接归因到打开者；
  * 2. Playwright 页面事件：page 打开/导航/关闭 + opener 链（窗口语义的打开者）；
- * 3. SW console 转发：patchTabsCreate 拦截日志（含调用栈）经此输出，定位到
- *    ScriptCat 具体哪段代码在开标签页。
+ * 3. SW console 转发：扩展 SW 的报错/自述日志经此输出（如更新检查失败、storage
+ *    lastError），配合 Target 事件归因「哪段扩展代码在活动」。
  */
 import type { BrowserContext, Page, Worker } from '@playwright/test'
 
@@ -72,7 +72,7 @@ export async function registerTabTracing(context: BrowserContext, debugPort?: nu
     // ① CDP Target 域：标签页创建/销毁 + 打开者归因（覆盖 SW 等非 page target）
     if (debugPort) await attachCDPTracing(debugPort, unsubscribers)
 
-    // ② SW console 转发：patchTabsCreate 的拦截警告（含 JS 调用栈）由此浮出
+    // ② SW console 转发：扩展 SW 日志/报错由此浮出
     const hookWorker = (worker: Worker): void => {
         if (!worker.url().startsWith('chrome-extension://')) return
         const site = worker.url().split('/')[2]

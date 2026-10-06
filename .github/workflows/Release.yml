@@ -3,7 +3,8 @@ on:
   push:
     branches:
       - master
-    # 仅代码相关改动触发（paths 对标签推送不生效，标签推送始终触发）
+    # 仅代码相关改动触发（paths 对标签推送不生效，标签推送始终触发）；
+    # pkg/lock 无 version 字段（版本权威源 mata.json），依赖变更仍值得过一遍正式构建
     paths:
       - "src/mata/mata.json"
       - "package.json"

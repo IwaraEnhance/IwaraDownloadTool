@@ -55,9 +55,9 @@ function parseChannel(raw: string | undefined): Channel {
     return channel
 }
 
-/** 计算产物版本号：dev 渠道附加 -dev.<uuid> 保证每次构建可区分，preview/latest 使用 package.json 版本 */
-function resolveVersion(packageVersion: string, channel: Channel): string {
-    return channel === 'dev' ? `${packageVersion}-dev.${UUID()}` : packageVersion
+/** 计算产物版本号：dev 渠道附加 -dev.<uuid> 保证每次构建可区分，preview/latest 使用 mata.json 版本（v${pkg}） */
+function resolveVersion(mataVersion: string, channel: Channel): string {
+    return channel === 'dev' ? `${mataVersion}-dev.${UUID()}` : mataVersion
 }
 
 /** 输出 dist 产物清单与大小 */

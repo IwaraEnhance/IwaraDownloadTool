@@ -1,16 +1,20 @@
 /**
  * 脚本管理器驱动抽象：把「管理器特定」的扩展装载与脚本安装收敛为策略接口，
  * fixtures 的通用链路（两阶段 userScriptsAccess 权限预配置、profile 隔离、
- * 事件/产物解析）全部同源共享。E2E_MANAGER=scriptcat|tampermonkey|violentmonkey
- * 是切换点——安装驱动是唯一需要按管理器分叉的部分。
+ * 事件/产物解析）全部同源共享。E2E_MANAGER=scriptcat|tampermonkey 是切换点——
+ * 安装驱动是唯一需要按管理器分叉的部分。
  */
 import type { BrowserContext } from '@playwright/test'
 
-export type ManagerId = 'scriptcat' | 'tampermonkey' | 'violentmonkey'
+export type ManagerId = 'scriptcat' | 'tampermonkey'
 
 export interface ManagerDriver {
     /** 管理器标识（与 E2E_MANAGER 取值一致） */
     readonly id: ManagerId
+    /** 扩展 options 页路径（manifest 的 options_page/options_ui.page 原样事实）：
+     * TM="options.html"，ScriptCat="src/options.html"——扩展页承载消息/存储的用例
+     * 据此拼 URL，严禁在 spec 硬编码某一家的路径（跨管理器立即 ERR_FILE_NOT_FOUND） */
+    readonly optionsPath: string
     /** 解析扩展目录（需含 manifest.json）；不可用时抛出带修复指引的错误 */
     resolveExtension(): Promise<string>
     /**
@@ -35,11 +39,6 @@ export interface ManagerDriver {
      * 只保留真正的安装页，其余自启扩展页面一律自动关闭。
      */
     isInstallPageUrl?(url: string): boolean
-    /**
-     * 可选：在扩展 SW 层面拦截 tabs.create，非安装页的创建请求直接丢弃
-     * （源头拦截，比「弹出后关闭」更彻底，不产生窗口闪烁）。返回恢复函数。
-     */
-    patchTabsCreate?(context: BrowserContext, extensionId: string): Promise<() => void>
     /**
      * 可选：该管理器自启「噪音外链页」的 URL 前缀列表（fixtures 兜底清扫用，
      * 与 chrome-extension:// 页一并事件级自动关闭）。管理器专有知识归驱动声明，

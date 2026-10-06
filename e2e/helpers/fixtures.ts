@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playwright fixture：加载脚本管理器扩展（默认 ScriptCat，E2E_MANAGER 可切换）+ 注入本项目用户脚本。
  *
  * 机制参照 Playwright 官方 chrome-extensions 方案（launchPersistentContext +
@@ -27,6 +27,12 @@ import { askVerdictInBrowser } from './humanPanel'
  */
 function resolveManagerExtension(): Promise<string> {
     return resolveManager().resolveExtension()
+}
+
+/** 当前管理器的扩展 options 页完整 URL（路径来自驱动声明的 manifest 事实，
+ * 严禁在 spec 硬编码某一家的路径——TM 在根目录、ScriptCat 在 src/ 下） */
+export function managerOptionsUrl(extensionId: string): string {
+    return `chrome-extension://${extensionId}/${resolveManager().optionsPath}`
 }
 
 /** 本项目用户脚本产物（未压缩版；文件名读 mata.json displayName，E2E_USERSCRIPT_PATH 可覆盖） */
@@ -124,12 +130,35 @@ async function launchExtensionContext(userDataDir: string): Promise<BrowserConte
     if (channel === 'chrome') {
         // 真实 Chrome 侧载：CDP Extensions.loadUnpacked（browser target 专用；免 flag、
         // 免开发者模式、装的扩展重启即卸载——与每用例独立 profile 启动天然契合）
-        await loadExtensionViaCDP(context, debugPort, pathToExtension)
+        // ⚠️ 侧载 burst 期窗口静默：loadUnpacked 返回 → SW 立即启动 → onInstalled/更新
+        // 检查弹引导页（docs.scriptcat.org 等）——这一切早于任何运行时补丁可注入的时机。
+        // 平台层治理（与扩展内部零耦合，不随管理器版本变化）：侧载前最小化窗口，
+        // 页面照样创建/事件照样派发/清扫器照样工作，只是不可见；SW 稳定后恢复窗口。
+        if (!isHeadless) {
+            console.log('[setup]   windowSilence 开始（minimized）…')
+            const silence = await minimizeWindow(context)
+            console.log('[setup]   windowSilence minimized 完成…')
+            try {
+                console.log('[setup]   loadExtensionViaCDP 开始…')
+                await loadExtensionViaCDP(context, debugPort, pathToExtension)
+                console.log('[setup]   loadExtensionViaCDP 完成')
+            } finally {
+                await silence?.restore()
+            }
+        } else {
+            console.log('[setup]   loadExtensionViaCDP 开始…')
+            await loadExtensionViaCDP(context, debugPort, pathToExtension)
+            console.log('[setup]   loadExtensionViaCDP 完成')
+        }
     }
-    // 管理器自启引导页（安装成功/权限引导）源头拦截（SW 内 tabs.create 丢弃）+
-    // 现存噪音页清点关闭，防抢占安装页事件；全程 tab 事件跟踪（CDP 归因）
+    // 噪音页清扫（扩展页 + 管理器外链引导页，事件级自动关闭——行为层免底；
+    // burst 期预防由上方窗口静默承担）；全程 tab 事件跟踪（CDP 归因）
+    console.log('[setup]   suppressManagerOnboarding 开始…')
     await suppressManagerOnboarding(context)
+    console.log('[setup]   suppressManagerOnboarding 完成')
+    console.log('[setup]   registerTabTracing 开始…')
     await registerTabTracing(context, debugPort)
+    console.log('[setup]   registerTabTracing 完成')
     return context
 }
 
@@ -164,12 +193,58 @@ async function loadExtensionViaCDP(context: BrowserContext, debugPort: number, e
 }
 
 /**
- * 抑制管理器自启页面：管理器首启/启用后会自动弹的页——
+ * 平台层窗口静默（治理管理器自启噪音页的闪窗）：侧载前把浏览器窗口最小化，
+ * SW 稳定（首个扩展页事件 + 清扫器就绪）后恢复。
+ *
+ * 为什么用这一层（对比被否决的方案）：
+ * - 磁盘级注入扩展 SW 文件：硬编码路径/bundle 形态，扩展更新即静默失效，且改写
+ *   了被测系统——不符合「测原装扩展」的测试本质；
+ * - 运行时 worker.evaluate 补丁：与 SW 自启赛跑必输（loadUnpacked 返回 → onInstalled
+ *   立即弹页，早于任何 evaluate 可注入的时机，tab 监控 dump 实证）；
+ * - 本方案：只依赖 Chrome 稳定协议 Browser.setWindowBounds，与扩展内部零耦合，
+ *   扩展爱怎么更新都不影响。噪音页照样创建、事件照样派发、清扫器照样工作，
+ *   只是用户看不见——「多余窗口闪现」从感知上归零，行为层交给双层清扫维持。
+ *
+ * 返回 { session, restore }；失败不影响主流程（返回 null，恢复步骤自然跳过——
+ * 窗口静默只是体验优化，不是正确性依赖）。
+ */
+async function minimizeWindow(context: BrowserContext): Promise<{ session: import('@playwright/test').CDPSession; restore: () => Promise<void> } | null> {
+    try {
+        // Browser.getWindowForTarget 需要默认 target：browser 级 newBrowserCDPSession
+        // 无 web contents 会报 "No web contents in the target"（实测），必须挂到具体页
+        const page = context.pages()[0]
+        if (!page) return null
+        const session = await context.newCDPSession(page)
+        const { windowId } = await session.send('Browser.getWindowForTarget')
+        await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
+        console.log('[fixtures] 窗口已最小化（侧载 burst 静默期开始）')
+        const restore = async (): Promise<void> => {
+            try {
+                // 等待信号：扩展 SW 出现（onInstalled 引导 burst 已发完）或短超时免垫底
+                await Promise.race([
+                    context.waitForEvent('serviceworker', { timeout: 8_000 }).catch(() => undefined),
+                    new Promise((r) => setTimeout(r, 8_000))
+                ])
+                await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
+                console.log('[fixtures] 窗口已恢复（侧载 burst 静默期结束）')
+            } catch (e) {
+                console.log(`[fixtures] 窗口恢复失败（不阻塞）: ${String(e).slice(0, 120)}`)
+            }
+        }
+        return { session, restore }
+    } catch (e) {
+        console.log(`[fixtures] 窗口最小化失败（不阻塞）: ${String(e).slice(0, 120)}`)
+        return null
+    }
+}
+
+/**
+ * 噪音页清扫：管理器首启/启用后会自动弹的页——
  * ①「安装成功 / 权限引导」扩展页（chrome-extension://，非安装页）
  * ② 更新日志/引导外链（各管理器不同，由驱动 noiseUrlPatterns 声明）
  * 都会抢占安装流程的 waitForEvent('page') / 占据有头窗口。双层治理：
- * ① SW 源头拦截：驱动 patchTabsCreate 直接丢弃非安装页的创建请求（无窗口闪烁）；
- * ② 兑底清扫：现存/后续噪音页（扩展页 + 管理器外链引导页）事件级自动关闭。
+ * ① 平台层预防：侧载 burst 期窗口静默（launchExtensionContext，闪窗不可见）；
+ * ② 本函数：清扫（现存/后续噪音页事件级自动关闭——行为层兜底）。
  */
 export async function suppressManagerOnboarding(context: BrowserContext): Promise<void> {
     const keep = (url: string): boolean =>
@@ -177,10 +252,7 @@ export async function suppressManagerOnboarding(context: BrowserContext): Promis
     const noisePatterns = resolveManager().noiseUrlPatterns ?? []
     const isNoise = (url: string): boolean =>
         (url.startsWith('chrome-extension://') || noisePatterns.some((p) => url.startsWith(p))) && !keep(url)
-    // ① 源头拦截（驱动可选实现；SW 重启时驱动内部自会用新 SW 重打补丁）
-    const extensionId = await waitExtensionId(context)
-    await resolveManager().patchTabsCreate?.(context, extensionId)
-    // ② 兕底清扫：现存 + 事件级
+    // 清扫：现存 + 事件级
     const closeIfNoise = (page: Page): void => {
         if (isNoise(page.url())) void page.close().catch(() => undefined)
     }
@@ -398,29 +470,57 @@ export const testSharedScript = base.extend<{}, { sharedSession: SharedSession; 
     ],
     sharedSession: [
         async ({ }, use) => {
+            const step = async (name: string, fn: () => Promise<void>): Promise<void> => {
+                const t0 = Date.now()
+                console.log(`[setup] ▶ ${name} …`)
+                try {
+                    await fn()
+                    console.log(`[setup] ✓ ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s)`)
+                } catch (e) {
+                    console.log(`[setup] ✘ ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s): ${String(e).slice(0, 160)}`)
+                    throw e
+                }
+            }
             const { mata } = mataInfo()
-            const baseDir = await baseProfileReady(baseProfileDir())
+            let baseDir = ''
+            await step('baseProfileReady（哨兵 profile 就绪）', async () => {
+                baseDir = await baseProfileReady(baseProfileDir())
+            })
             const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), `${mata.displayName}-e2e-shared-`.toLowerCase()))
             fs.cpSync(baseDir, userDataDir, { recursive: true })
-            const context = await launchExtensionContext(userDataDir)
-            const extensionId = await waitExtensionId(context)
-            // 运行时权限/配置预配置（每次扩展载入后直接对当前实例操作，
-            // 不依赖基准 profile 的哨兵持久化——管理器切换/CDP 动态载入都安全）
-            await resolveManager().prepareRuntime?.(context, extensionId)
+            let context: BrowserContext | undefined
+            let extensionId = ''
+            let page: Page | undefined
+            await step('launchExtensionContext（启动浏览器+侧载）', async () => {
+                context = await launchExtensionContext(userDataDir)
+            })
+            await step('waitExtensionId（等 SW 出现）', async () => {
+                extensionId = await waitExtensionId(context!)
+                console.log(`[setup]   extensionId=${extensionId}`)
+            })
+            await step('prepareRuntime', async () => {
+                await resolveManager().prepareRuntime?.(context!, extensionId)
+            })
             // 脚本只装一次（主脚本；探针仅 mata.e2e.probeEntry 声明了的项目安装）
-            await resolveManager().installScript(context, extensionId, resolveUserScript())
+            await step(`installScript 主脚本`, async () => {
+                await resolveManager().installScript(context!, extensionId, resolveUserScript())
+            })
             if (artifactNames(mata).probeScript) {
-                await resolveManager().installScript(context, extensionId, resolveE2EProbeScript())
+                await step(`installScript 探针`, async () => {
+                    await resolveManager().installScript(context!, extensionId, resolveE2EProbeScript())
+                })
             }
             // ⚠️ 标签页配额 ≤ 1：复用启动自带的初始页面（about:blank），不另开 newPage
-            const page = context.pages()[0] ?? (await context.newPage())
+            page = context!.pages()[0] ?? (await context!.newPage())
             // 有目标站点的项目：首次且唯一一次站点加载（挑战兜底）；无站点项目跳过
             if (TARGET_SITE) {
-                await page.goto(TARGET_SITE, { waitUntil: 'domcontentloaded' })
-                await waitChallengeAndSettle(page)
+                await step(`goto ${TARGET_SITE}`, async () => {
+                    await page!.goto(TARGET_SITE, { waitUntil: 'domcontentloaded' })
+                    await waitChallengeAndSettle(page!)
+                })
             }
-            await use({ context, page, extensionId })
-            await context.close()
+            await use({ context: context!, page: page!, extensionId })
+            await context!.close()
             fs.rmSync(userDataDir, { recursive: true, force: true })
         },
         { scope: 'worker', auto: true }

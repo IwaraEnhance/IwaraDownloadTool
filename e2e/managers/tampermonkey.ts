@@ -106,6 +106,7 @@ async function installScriptViaMessage(
 
 export const tampermonkeyDriver: ManagerDriver = {
     id: 'tampermonkey',
+    optionsPath: 'options.html', // manifest options_page 原样事实（TM 扩展页在根目录，无 src/）
     async resolveExtension(): Promise<string> {
         const explicit = process.env.TAMPERMONKEY_EXT_PATH
         if (explicit) {

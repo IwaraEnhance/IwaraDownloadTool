@@ -29,12 +29,31 @@ test('冒烟：脚本安装后应在目标站点执行（mutex 守卫 + UI 挂�
         await page.goto(TARGET_SITE, { waitUntil: 'domcontentloaded' })
     }
     // ① mutex 守卫：脚本 @run-at document-start，注入成功即在 window 留守卫标记
+    // 回调容错：站点 SPA 偫发软导航会摧毁 evaluate 上下文，poll 对回调异常直接失败，需自吞重试
     await expect
-        .poll(async () => page.evaluate((key) => !!(window as any)[key], GUARD_KEY), { timeout: 30_000 })
+        .poll(
+            async () => {
+                try {
+                    return await page.evaluate((key) => !!(window as any)[key], GUARD_KEY)
+                } catch {
+                    return false
+                }
+            },
+            { timeout: 30_000 }
+        )
         .toBe(true)
-    // ② 主流程跑完的标志：脚本创建的 DOM（容器/水印/选择框根）已挂载
+    // ② 主流程跑完的标志：脚本创建的 DOM（容器/水印/选择框根）已挂载（首装态下 overlay 亦计入）
     await expect
-        .poll(async () => page.evaluate(() => document.querySelectorAll('[id^="plugin"]').length > 0), { timeout: 30_000 })
+        .poll(
+            async () => {
+                try {
+                    return await page.evaluate(() => document.querySelectorAll('[id^="plugin"]').length > 0)
+                } catch {
+                    return false
+                }
+            },
+            { timeout: 30_000 }
+        )
         .toBe(true)
     console.log(`[smoke] 扩展 ${sharedSession.extensionId} 注入成功`)
 })

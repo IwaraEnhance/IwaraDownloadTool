@@ -113,7 +113,7 @@ test.describe('脚本 UI 与行为（共享会话：一次启动 · 一次首载
             await expect(linkCheck).not.toBeChecked() // 缺省 false
             await linkCheck.click()
             // ── reload（本套件唯一整页重载）：GM 持久化证明 + 进入完整装配态 ──
-            await page.reload({ waitUntil: 'domcontentloaded' })
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
             // 重载后非首装（isFirstRun 已写回 false）：不再出现引导，直接可见菜单
             await expect(page.locator('#pluginMenu'), '插件菜单容器应挂载（完整装配态）').toBeVisible({ timeout: 90_000 })
             await expect(page.locator('#pluginOverlay')).toHaveCount(0)

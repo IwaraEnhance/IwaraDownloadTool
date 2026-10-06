@@ -34,6 +34,9 @@ export function setMediaCenterPushHook(hook: (videoInfo: FullVideoInfo) => Promi
 
 /** Aria2 任务同步队列：GM 存储键（所有页面共享，由唯一的“管理器”页面处理） */
 const ARIA2_TRACK_QUEUE_KEY = 'Aria2TrackQueue'
+/** 终态去重表 GM 存储键（所有页面共享）：videoId → doneAt 瘦记录，
+ * 防止 tellStopped 中的旧完成任务被反复入队/反复弹提示 */
+const ARIA2_TRACK_DONE_KEY = 'Aria2TrackDone'
 /** 管理器全局锁名：跨页面仅此一把锁，持有者负责处理整个队列 */
 const ARIA2_TRACK_MANAGER_LOCK = 'aria2TrackManager'
 /** 管理器选举间隔（毫秒）：非管理器页面周期尝试抢占单把锁 */
@@ -110,14 +113,10 @@ interface Aria2TrackTask {
     addedAt: number
     /** 扫描补入时任务已是 complete（worker 不再弹“下载完成”提示） */
     alreadyComplete?: boolean
-    /** 下载完成时间戳（终态标记：写入后不再重复入队/弹提示） */
-    completedAt?: number
-    /** MediaCenter 推送成功时间戳（仅启用推送时写入；写入后视为终态） */
+    /** MediaCenter 推送成功时间戳（仅启用推送时写入；写入后即终态出队） */
     pushedAt?: number
-    /** MediaCenter 推送最近失败时间戳（用于重试退避） */
+    /** MediaCenter 推送最近失败时间戳（用于重试退避；此后任务仍在队列中继续重试） */
     pushFailedAt?: number
-    /** 推送已处理且不再重试（如启用推送但始终无完整视频信息），终态标记 */
-    pushDone?: boolean
 }
 
 /** 管理器是否在本页运行中（防止并发重复启动管理循环） */
@@ -127,8 +126,16 @@ const aria2TrackWorkers = new Set<string>()
 /** 管理器会话代号：每次获得锁递增；旧会话残留 worker 检测到代号不符即让位，防止强制接管时重复 worker 竞争同一任务 */
 let aria2TrackManagerEpoch = 0
 
-/** 跨页面同步任务队列：复用 GMSyncDictionary 的 GM 存储跨页同步能力 */
+/** 跨页面同步任务队列：复用 GMSyncDictionary 的 GM 存储跨页同步能力。
+ * 只存未终态任务（worker 收尾即出队）——活任务天然是少数（并发下载数量级），
+ * 大幅压低单键 GM 存储体积与每次写的全量序列化代价。终态去重由独立的
+ * Aria2TrackDone 瘦表承担（见下）。 */
 const aria2TrackQueue = new GMSyncDictionary<Aria2TrackTask>(ARIA2_TRACK_QUEUE_KEY, [], (value) => isString((value as Aria2TrackTask)?.videoId) && isString((value as Aria2TrackTask)?.gid))
+
+/** 终态去重表：videoId → 完成时间戳（磨立记录，不含 downloadParams/Cookie/gid）。
+ * 仅入队查重与 30 天窗口清理消费；独立于活队列，避免历史终态记录拖大队列单键体积
+ * （每写一次全量序列化）。 */
+const aria2TrackDone = new GMSyncDictionary<number>(ARIA2_TRACK_DONE_KEY, [], (value) => isConvertibleToNumber(value))
 // 队列变化（含其他页面的远程变更）时，若本页为管理器则立即同步 worker
 aria2TrackQueue.onSet = () => {
     if (aria2TrackLock.isHeld(ARIA2_TRACK_MANAGER_LOCK)) syncAria2TrackWorkers(aria2TrackManagerEpoch)
@@ -160,7 +167,16 @@ export function enqueueAria2TrackTask(videoId: string, gid: string, downloadPara
 function hasAria2TrackTask(videoId: string): boolean {
     return aria2TrackQueue.has(videoId)
 }
-/** 从队列移除任务 */
+/** 终态去重：videoId 在 30 天窗口内是否已完成过（防 tellStopped 旧完成任务反复入队） */
+function hasAria2TrackDone(videoId: string): boolean {
+    return !isNullOrUndefined(aria2TrackDone.get(videoId))
+}
+/** 任务收尾：从活队列移除并写入终态去重表（一步完成出队 + 去重落账） */
+function finishAria2TrackTask(videoId: string, doneAt: number): void {
+    aria2TrackDone.set(videoId, doneAt)
+    aria2TrackQueue.delete(videoId)
+}
+/** 从队列移除任务（无终态语义：用于用户放弃/持续异常等不应记为完成的中途退出） */
 function removeAria2TrackTask(videoId: string): void {
     aria2TrackQueue.delete(videoId)
 }
@@ -179,14 +195,6 @@ function updateAria2TrackTask(videoId: string, patch: Partial<Aria2TrackTask>): 
 /** MediaCenter 推送功能是否启用（实验特性开启且 API/Key 均已配置） */
 function isMediaCenterPushEnabled(): boolean {
     return config.experimentalFeatures && !config.mediaCenterApi.isEmpty() && !config.mediaCenterApiKey.isEmpty()
-}
-
-/** 条目是否已达终态（无需 worker 继续处理）：推送成功 / 推送已处理 / 完成且推送未启用 */
-function isAria2TrackDone(task: Aria2TrackTask): boolean {
-    if (!isNullOrUndefined(task.pushedAt)) return true
-    if (!isNullOrUndefined(task.pushDone)) return true
-    if (!isNullOrUndefined(task.completedAt) && !isMediaCenterPushEnabled()) return true
-    return false
 }
 
 /** 计算 aria2 任务下载进度（0~1，基于 completedLength/totalLength），无法计算时返回 0 */
@@ -293,12 +301,8 @@ async function processAria2TrackTask(task: Aria2TrackTask, epoch: number): Promi
         // 本页仍是管理器且任务仍在队列中才继续（失去则自行让位）
         if (!aria2TrackLock.isHeld(ARIA2_TRACK_MANAGER_LOCK)) return
         if (!hasAria2TrackTask(task.videoId)) return
-        // 已被新管理器会话取代（强制接管会清空去重表并重起 worker）→ 让位，由新 worker 接管
+        // 已被新管理器会话取代（强制接管会清空 worker 去重表并重起 worker）→ 让位，由新 worker 接管
         if (epoch !== aria2TrackManagerEpoch) return
-
-        // 终态条目（推送成功/推送已处理/未启用推送的已完成任务）：worker 退出
-        const doneQueued = aria2TrackQueue.get(task.videoId)
-        if (doneQueued && isAria2TrackDone(doneQueued)) return
 
         // 每轮从队列重读最新 gid：同一 videoId 在 aria2 中可能有多个任务（多个 gid），
         // 扫描发现更“活”的任务时会更新队列 gid，worker 需跟随最新 gid 追踪真实下载，
@@ -346,32 +350,32 @@ async function processAria2TrackTask(task: Aria2TrackTask, epoch: number): Promi
                 case 'complete': {
                     const now = Date.now()
                     const queued = aria2TrackQueue.get(task.videoId)
-                    // 重试轮（completedAt 已写入）：已推送成功或推送未启用 → 终态退出；
-                    // 推送失败退避中 → 保持 worker 存活按轮询间隔等待重试（不重复弹提示）
-                    if (queued?.completedAt) {
-                        if (!isNullOrUndefined(queued.pushedAt) || !isMediaCenterPushEnabled()) return
-                        if (queued.pushFailedAt && now - queued.pushFailedAt < ARIA2_TRACK_PUSH_RETRY_INTERVAL) {
+                    // 重试轮（pushFailedAt 已写入）：推送失败退避中 → 按 5 分钟间隔重试推送；
+                    // 之前已标记推送失败但尚未到退避窗口 → 保持 worker 存活继续等（不重复弹提示）
+                    if (queued?.pushFailedAt) {
+                        if (now - queued.pushFailedAt < ARIA2_TRACK_PUSH_RETRY_INTERVAL) {
                             log.debug(`${task.videoId} 推送失败退避中，等待重试`)
                             break
                         }
-                    }
-                    log.debug(`${task.videoId} 下载完成`)
-                    // 首次完成 / 非扫描补入的旧完成任务才弹“下载完成”提示（避免重复刷屏）
-                    if (!queued?.completedAt && !queued?.alreadyComplete) {
-                        trackStatusToast(task.videoId, videoInfo?.Title ?? task.videoId, ToastType.Info, 'aria2TrackComplete')
+                    } else {
+                        // 首次完成才弹“下载完成”提示（避免重复刷屏）
+                        log.debug(`${task.videoId} 下载完成`)
+                        if (!queued?.alreadyComplete) {
+                            trackStatusToast(task.videoId, videoInfo?.Title ?? task.videoId, ToastType.Info, 'aria2TrackComplete')
+                        }
                     }
                     if (isMediaCenterPushEnabled() && videoInfo) {
                         const pushed = (await mediaCenterPushHook?.(videoInfo).then(() => true).catch(() => false)) ?? false
                         if (pushed) {
-                            updateAria2TrackTask(task.videoId, { completedAt: now, pushedAt: now, pushFailedAt: undefined })
-                            return // 推送成功 → 终态
+                            finishAria2TrackTask(task.videoId, now)
+                            return // 推送成功 → 终态出队
                         }
                         log.warn(`${task.videoId} MediaCenter 推送失败，${Math.round(ARIA2_TRACK_PUSH_RETRY_INTERVAL / 1000)}s 后重试`)
-                        updateAria2TrackTask(task.videoId, { completedAt: now, pushFailedAt: now })
+                        updateAria2TrackTask(task.videoId, { pushFailedAt: now })
                         break // 保留 worker，等待退避后重试
                     }
-                    // 推送未启用 / 无完整信息：completedAt（或 pushDone）即终态，避免无限重试
-                    updateAria2TrackTask(task.videoId, isMediaCenterPushEnabled() ? { completedAt: now, pushDone: true } : { completedAt: now })
+                    // 推送未启用 / 无完整信息：终态出队（记入去重表）
+                    finishAria2TrackTask(task.videoId, now)
                     return
                 }
 
@@ -499,10 +503,10 @@ async function processAria2TrackTask(task: Aria2TrackTask, epoch: number): Promi
     }
 }
 
-/** 同步 worker 与队列：为队列中尚未启动 worker 的任务启动 worker（Set 去重防重复） */
+/** 同步 worker 与队列：为队列中尚未启动 worker 的任务启动 worker（Set 去重防重复）。
+ * 队列只存未终态任务（终态在收尾时已出队），无需逐条终态筛查 */
 function syncAria2TrackWorkers(epoch: number): void {
     for (const task of aria2TrackQueue.valuesArray()) {
-        if (isAria2TrackDone(task)) continue // 终态条目不再启动 worker（推送重试由存活 worker 自行处理）
         if (aria2TrackWorkers.has(task.videoId)) continue
         aria2TrackWorkers.add(task.videoId)
         log.debug(`管理器开始处理 ${task.videoId} (gid=${task.gid})`)
@@ -631,11 +635,11 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
         let enqueued = 0 // 本轮新纳入队列的任务数（debug 统计）
         let stopped = 0 // 本轮停止的冗余任务数（debug 统计）
 
-        // 清理超期终态记录（推送成功/已处理/未启用推送的完成记录保留一段时间后移除），防止去重表无限膨胀
-        for (const entry of aria2TrackQueue.valuesArray()) {
-            if (!isAria2TrackDone(entry)) continue
-            const doneAt = entry.pushedAt ?? entry.completedAt ?? entry.addedAt
-            if (Date.now() - doneAt > ARIA2_TRACK_DONE_RETENTION) removeAria2TrackTask(entry.videoId)
+        // 清理超期终态记录（30 天窗口外的完成记录从去重表移除），防止去重表无陎膨胀
+        // （去重表只存 videoId→doneAt 磦记录，单键体积 = 条数 × ~30 字节，清理仅为长期卫生）
+        const now = Date.now()
+        for (const [videoId, doneAt] of aria2TrackDone.entries()) {
+            if (now - doneAt > ARIA2_TRACK_DONE_RETENTION) aria2TrackDone.delete(videoId)
         }
 
         for (const [videoId, group] of taskGroups) {
@@ -669,11 +673,20 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
             }
 
             // 状态追踪去重（模块自维护，不依赖 MediaCenter 映射表）：
-            // 已在队列中的任务一律跳过；非终态条目沿用 gid 跟随逻辑，让 worker 追踪真实下载；
-            // 终态条目（已完成）由 worker 负责推送重试或直接收尾，扫描不再重复入队
+            // ① 终态去重表命中（30 天内已完成）→ 跳过不再入队（tellStopped 旧完成任务不再重复处理）；
+            // ② 已在活队列中 → 沿用 gid 跟随逻辑，让 worker 追踪真实下载；
+            // ③ 两者都不在 → 入队待 worker 接管
+            if (hasAria2TrackDone(videoId) && task.status !== 'active' && task.status !== 'waiting') {
+                // 30 天内已完成过的任务，除非还在 aria2 中活跃（active/waiting = 用户重新下载），
+                // 否则视为旧残留：停止该任务并清结果，不入队（与终态收尾语义一致）
+                await removeRedundantAria2Task(task)
+                stopped++
+                log.debug(`扫描 ${videoId}: 30 天内已完成，跳过残留任务 ${task.gid}(${task.status})`)
+                continue
+            }
             if (hasAria2TrackTask(videoId)) {
                 const queued = aria2TrackQueue.get(videoId)
-                if (queued && isNullOrUndefined(queued.completedAt)) {
+                if (queued) {
                     // 非终态：检查队列记录的是否仍是最值得追踪的 gid。
                     // 同一 videoId 可能因重复下载/重建/手动添加而在 aria2 中存在多个任务（多个 gid），
                     // 而队列按 videoId 只存一个 gid——若记录的是旧 gid（paused/error 残留），

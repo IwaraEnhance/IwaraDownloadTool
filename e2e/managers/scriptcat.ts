@@ -7,7 +7,8 @@
  *   安装页（src/install.html?url=…）仅作为 isInstallPageUrl 白名单保留。
  * - 引导抑制：直写 firstShowDeveloperMode（SW showUserscriptActivationGuide 的
  *   去重键，键值与 er DAO/localStorageDAO 完全同构）——SW 读到同 UA 指纹即
- *   return，不再弹 open-dev 引导页。
+ *   return，不再弹 open-dev 引导页；onInstalled 类无去重开关的引导页由
+ *   fixtures 平台层窗口静默 + 事件级清扫承担（本驱动不改写扩展内部）。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -82,13 +83,16 @@ async function installScriptViaMessage(
 
 export const scriptcatDriver: ManagerDriver = {
     id: 'scriptcat',
+    optionsPath: 'src/options.html', // manifest options_ui.page 原样事实
     async resolveExtension(): Promise<string> {
         const explicit = process.env.SCRIPTCAT_EXT_PATH
         if (explicit) {
             if (existsSync(path.join(explicit, 'manifest.json'))) return explicit
             throw new Error(`SCRIPTCAT_EXT_PATH=${explicit} 中未找到 manifest.json`)
         }
-        // 缺失时自动下载（新克隆零手工步骤；已存在则直接返回）
+        // 缺失时自动下载（新克隆零手工步骤；已存在则直接返回）：不改写扩展文件——
+        // 磁盘级注入曾试过但被否决：硬编码 SW 路径在扩展更新后静默失效，且改写了
+        // 被测系统。噪音页闪窗由平台层窗口静默治理（见 fixtures.setupWindowSilence）
         return fetchExtension()
     },
     /**
@@ -161,75 +165,7 @@ export const scriptcatDriver: ManagerDriver = {
         return url.includes('/src/install.html')
     },
     /** ScriptCat 自启噪音外链：更新日志/权限引导文档页（无代理时空白卡位） */
-    noiseUrlPatterns: ['https://docs.scriptcat.org'],
-    /**
-     * SW 源头拦截：patch 扩展 SW 的 chrome.tabs.create，非安装页创建直接丢弃
-     * （返回假 tab.id 兼容 awaiter），安装页照常放行。ScriptCat 首启/启用时
-     * 自动弹的「安装成功/权限引导」页由此在创建前即被拦掉，无窗口闪烁。
-     * 返回恢复函数（本探针/测试结束时调用，还原原始实现）。
-     *
-     * ⚠️ 为何必须 patch（v1.4.0 源码对读结论，内部变量无法替代）：
-     * - open-dev 引导页已被 prepareProfile 预写去重键覆盖（内部状态方案）；
-     * - install_comple（onInstalled reason="install"）与更新日志页（reason="update"
-     *   且版本尾号为 .0）**没有 visited/suppress 类存储开关**——reason 是 Chrome
-     *   派发的事件事实。e2e 下 CDP loadUnpacked 每次启动=一次新装事件，两页
-     *   每个用例级 context 都可能弹，唯一手段=创建前拦截。
-     */
-    async patchTabsCreate(context, extensionId) {
-        await patchSwTabsCreate(context, extensionId, true)
-        // 开发者模式切换/扩展重载会重启 SW：监听新 SW 出现时重新 patch
-        const reapply = (sw: import('@playwright/test').Worker): void => {
-            if (!sw.url().includes(extensionId)) return
-            void patchSwTabsCreate(context, extensionId, true)
-        }
-        context.on('serviceworker', reapply)
-        return () => {
-            context.off('serviceworker', reapply)
-            return patchSwTabsCreate(context, extensionId, false)
-        }
-        /** 在所有目标 SW 内安装/还原拦截器 */
-        async function patchSwTabsCreate(ctx: import('@playwright/test').BrowserContext, extId: string, enable: boolean): Promise<void> {
-            const workers = ctx.serviceWorkers().filter((w) => w.url().includes(extId))
-            await Promise.all(
-                workers.map((worker) =>
-                    worker
-                        .evaluate(
-                            (mode: { enable: boolean; installMarker: string }) => {
-                                const g = globalThis as unknown as {
-                                    chrome: { tabs: { create: (o: { url: string }) => Promise<{ id?: number }> } }
-                                }
-                                const anyG = g as unknown as {
-                                    __e2eOrigTabsCreate?: typeof g.chrome.tabs.create
-                                    __e2ePatchedTabsCreate?: boolean
-                                }
-                                if (!mode.enable) {
-                                    if (anyG.__e2eOrigTabsCreate) {
-                                        g.chrome.tabs.create = anyG.__e2eOrigTabsCreate
-                                        anyG.__e2eOrigTabsCreate = undefined
-                                        anyG.__e2ePatchedTabsCreate = false
-                                    }
-                                    return 'restored'
-                                }
-                                if (anyG.__e2ePatchedTabsCreate) return 'already'
-                                anyG.__e2eOrigTabsCreate = g.chrome.tabs.create.bind(g.chrome.tabs)
-                                g.chrome.tabs.create = (options) => {
-                                    if (String(options.url ?? '').includes(mode.installMarker)) {
-                                        console.log(`[e2e] 放行安装页创建: ${options.url}`)
-                                        return anyG.__e2eOrigTabsCreate!(options)
-                                    }
-                                    // 归因：打印调用栈，定位 ScriptCat 哪段代码在开标签页
-                                    const stack = new Error().stack?.split('\n').slice(2, 7).join(' | ') ?? '(无栈)'
-                                    console.warn(`[e2e] 已拦截扩展页创建: ${options.url}\n[e2e]   调用栈: ${stack}`)
-                                    return Promise.resolve({ id: -1 })
-                                }
-                                anyG.__e2ePatchedTabsCreate = true
-                                return 'patched'
-                            },
-                            { enable, installMarker: '/src/install.html' }
-                        )
-                        .catch(() => 'sw-gone')
-                )
-            )
-        }
-    }
+    /** ScriptCat 自启噪音外链：更新日志/权限引导文档页（无代理时空白卡位）。
+     *  侧载 burst 期治理：fixtures 窗口静默（平台层）+ 事件级清扫（行为层） */
+    noiseUrlPatterns: ['https://docs.scriptcat.org']
 }

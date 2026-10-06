@@ -122,6 +122,8 @@ async function main() {
         return
     }
 
+    // 版本号原样写回：迁移门控走 baseCompare（只看基座），dev 后缀不参与判定，
+    // 无需任何剥离补丁（详见 core/migration runMigrations 的门控语义说明）
     GM_setValue(GM_KEY_VERSION, GM_info.script.version)
     watermark.inject()
 

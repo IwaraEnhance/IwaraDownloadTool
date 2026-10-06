@@ -107,27 +107,25 @@ function getPackageVersion(): string {
 
 /**
  * 语义化版本递增（版本恒为 X.Y.Z，无预发布段）。返回 next 与落盘函数。
- * 权威写 mata.json；package.json 同镜像一份（npm 生态依赖其存在），不再作为构建版本来源。
+ * 唯一落盘目标：mata.json（项目权威信息源）。package.json/package-lock.json
+ * 已彻底解耦（无 version 字段，npm 对 private 包不要求；npm ci 只校验依赖清单），
+ * 不存在同步负担，也不存在版本漂移问题。
  */
 function bumpVersion(version: string, level: ReleaseOptions['level']): { next: string; write(): void } {
     const [major, minor, patch] = version.split('.').map(Number)
     const next = level === 'major' ? `${major + 1}.0.0` : level === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`
     const write = (): void => {
-        // 权威源：mata.json（保留 4 空格缩进的仓库既有 JSON 风格）
+        // 唯一版本源：mata.json（保留 4 空格缩进的仓库既有 JSON 风格）
         const mataPath = 'src/mata/mata.json'
         const mata = JSON.parse(readFileSync(mataPath, 'utf-8')) as Record<string, unknown>
         mata.version = next
         writeFileSync(mataPath, JSON.stringify(mata, null, 4) + '\n')
-        // 镜像：package.json
-        const pkg = JSON.parse(readFileSync('package.json', 'utf-8')) as Record<string, unknown>
-        pkg.version = next
-        writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n')
     }
     return { next, write }
 }
 
-/** 发布提交只允许包含这些文件（mata.json/package.json 为版本 bump 产物，src/i18n.ts 由构建生成） */
-const RELEASE_FILES = ['src/mata/mata.json', 'package.json', 'package-lock.json', 'src/i18n.ts']
+/** 发布提交只允许包含这些文件（mata.json 为 bump 产物，src/i18n.ts 由构建生成） */
+const RELEASE_FILES = ['src/mata/mata.json', 'src/i18n.ts']
 
 /**
  * 发布完整性守卫：确保发布过程中没有绕过发布流程的手动提交或暂存
@@ -242,7 +240,7 @@ function main(): void {
         }
 
         log(TAG, '创建版本提交...')
-        run('git add src/mata/mata.json package.json package-lock.json src/i18n.ts', { tag: TAG, dryRun: options.dryRun })
+        run('git add src/mata/mata.json src/i18n.ts', { tag: TAG, dryRun: options.dryRun })
         if (!options.dryRun) {
             verifyReleaseIntegrity(backupCommit)
         }

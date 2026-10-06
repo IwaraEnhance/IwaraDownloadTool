@@ -235,4 +235,46 @@ versionTestGroup.add(
     })
 )
 
+// ============ baseCompare（迁移门控语义） ============
+// 为什么需要它：迁移逻辑随代码携带，判定是否需要迁移只应看基座（major.minor.patch）。
+// 标准 compare 会让 dev 构建版本（x.y.z-dev.<uuid>）恒低于正式版 → 迁移永远 pending →
+// main() 每次加载 reload → 无限重载循环（e2e 实测）。以下用例锁死该语义。
+
+versionTestGroup.add(
+    new Test('baseCompare：dev 构建版本与正式版基座相等（门控不触发迁移）', 'async', function () {
+        const dev = new Version('3.3.129-dev.a22f7f95d3f3456aa1cb0cbdaeacc71c')
+        const release = new Version('3.3.129')
+        this.assertEqual(dev.baseCompare(release), VersionState.Equal)
+        this.assertEqual(release.baseCompare(dev), VersionState.Equal)
+    })
+)
+
+versionTestGroup.add(
+    new Test('baseCompare：构建元数据不参与比较（+build 与裸版相等）', 'async', function () {
+        const withMeta = new Version('3.3.129+build2023')
+        const bare = new Version('3.3.129')
+        this.assertEqual(withMeta.baseCompare(bare), VersionState.Equal)
+    })
+)
+
+versionTestGroup.add(
+    new Test('baseCompare：落后基座仍为 Low（真实旧版本迁移门控不受影响）', 'async', function () {
+        const old = new Version('3.3.128')
+        const current = new Version('3.3.129-dev.abc123')
+        this.assertEqual(old.baseCompare(current), VersionState.Low)
+        this.assertEqual(current.baseCompare(old), VersionState.High)
+    })
+)
+
+versionTestGroup.add(
+    new Test('baseCompare：与标准 compare 行为对比（预发布差异被有意忽略）', 'async', function () {
+        const dev = new Version('1.0.0-dev.abc')
+        const release = new Version('1.0.0')
+        // 标准 compare：SemVer 规则 11 预发布 < 正式版
+        this.assertEqual(dev.compare(release), VersionState.Low)
+        // baseCompare：同一基座视为相等（迁移已完成的世界）
+        this.assertEqual(dev.baseCompare(release), VersionState.Equal)
+    })
+)
+
 export default versionTestGroup
