@@ -1,282 +1,104 @@
-import '../core/env'
-import { delay, isNullOrUndefined, stringify } from '../core/env'
-import { ToastType } from '../core/enum'
-import { config } from '../core/config'
-import { unlimitedFetch, renderNode } from '../core/extension'
-import { createLogger } from '../core/log'
-import { db } from '../core/db'
-import { newToast, toastNode } from '../ui/notify'
-import { getDownloadPath } from '../download/downloadPath'
-import { getMoreCompleteVideoInfo, parseVideoInfo } from './video'
-import { pushToMediaCenter } from '../download/aria2TrackManager'
-
-const log = createLogger('MediaCenter')
-
 /**
- * 将浏览器数据库中缓存的视频元数据同步到 MediaCenter
- * 分两阶段执行：
- *   阶段一：从 MediaCenter 拉取全部视频列表，通过 title 匹配 iwara 视频 ID 建立映射
- *   阶段二：遍历匹配项，读取/解析完整元数据并更新到 MediaCenter
+ * MediaCenter 纯 HTTP API 客户端（错误以值类型返回）。
+ *
+ * 原 network/mediaCenter.ts 同时承载「批量同步编排」与「HTTP 调用」两层职责，
+ * 且反向依赖 download 层（downloadPath/aria2TrackManager），是 network→download
+ * 逆向边的根源。现拆分：
+ * - 本模块：纯 API 客户端（无 toast、无编排，错误以返回值/错误对象表达）；
+ * - features/mediaSync.ts：syncCachedToMediaCenter + pushToMediaCenter 编排（依赖本模块）。
  */
-export async function syncCachedToMediaCenter(): Promise<void> {
-    if (config.mediaCenterApi.isEmpty() || config.mediaCenterApiKey.isEmpty()) {
-        newToast(ToastType.Warn, {
-            node: toastNode(`请先配置 MediaCenter API 地址和密钥`, 'MediaCenter 同步'),
-            duration: 3000
-        }).show()
-        return
-    }
+import { config } from '../core/config'
+import { unlimitedFetch } from '../core/extension'
+import { isNullOrUndefined } from '../core/env'
 
-    const apiBase = config.mediaCenterApi.replace(/\/+$/, '')
-    const authHeaders = {
+/** MediaCenter 配置是否就绪（API 地址与密钥均非空） */
+export function isMediaCenterConfigured(): boolean {
+    return !config.mediaCenterApi.isEmpty() && !config.mediaCenterApiKey.isEmpty()
+}
+
+/** 归一化 API 基址（去尾部斜杠） */
+export function mediaCenterApiBase(): string {
+    return config.mediaCenterApi.replace(/\/+$/, '')
+}
+
+/** MediaCenter 请求头（Bearer 鉴权） */
+export function mediaCenterAuthHeaders(): Record<string, string> {
+    return {
         accept: 'application/json',
         'content-type': 'application/json',
         authorization: `Bearer ${config.mediaCenterApiKey}`
     }
+}
 
-    const total = await db.countVideos()
+/** MediaCenter 视频列表条目（列表端点返回的字段子集） */
+export interface MediaCenterListItem {
+    id: string
+    fileHash?: string
+    title?: string
+}
 
-    if (total === 0) {
-        newToast(ToastType.Info, {
-            text: `没有找到缓存的视频数据`,
-            duration: 3000
-        }).show()
-        return
-    }
-
-    // ── 阶段一：从 MediaCenter 拉取全部视频列表，通过 title 匹配 iwara 视频 ID 建立映射 ──
-    const phaseStartTime = Date.now()
-    let stepStartTime = phaseStartTime
-
-    const matchedMap = await db.getAllMediaCenterIdMaps() // 先加载本地已有的映射缓存
-    log.debug(`步骤1/4 加载本地映射缓存: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`)
-    stepStartTime = Date.now()
-
-    const listProgressNode = renderNode({
-        nodeType: 'p',
-        childs: `正在从 MediaCenter 拉取视频列表...`
+/** 拉取 MediaCenter 全部视频列表（limit=0 表示全量，按 createdAt 降序）。
+ * 失败抛错（含状态码与响应文本摘要），由调用方决定提示方式。 */
+export async function fetchMediaList(): Promise<MediaCenterListItem[]> {
+    const response = await unlimitedFetch(`${mediaCenterApiBase()}/api/media?limit=0&sortBy=createdAt&sortOrder=desc`, {
+        headers: mediaCenterAuthHeaders()
     })
-    const listProgressToast = newToast(ToastType.Info, {
-        node: listProgressNode,
-        duration: -1
-    })
-    listProgressToast.show()
-
-    try {
-        const listUrl = `${apiBase}/api/media?limit=0&sortBy=createdAt&sortOrder=desc`
-        const response = await unlimitedFetch(listUrl, { headers: authHeaders })
-
-        if (!response.ok) {
-            throw new Error(`拉取 MediaCenter 列表失败: ${response.status} ${await response.text()}`)
-        }
-
-        const result = await response.json()
-        const items: Array<{ id: string; fileHash?: string; title?: string }> = result.items
-
-        log.debug(`步骤2/4 拉取 MediaCenter 列表: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${items.length} 条）`)
-        stepStartTime = Date.now()
-
-        listProgressNode.firstChild!.textContent = `MediaCenter 列表拉取完成，共 ${items.length} 条记录，正在遍历本地数据库建立映射...`
-
-        const entriesToSave: Array<{ videoId: string; mediaCenterId: string }> = []
-        let processedCount = 0
-
-        // ── 预建查找索引：避免每视频 O(n) 扫描 items ──
-        const hashToId = new Map<string, string>()
-        const tokenToId = new Map<string, string>()
-        const titleContains: Array<{ id: string; lowerTitle: string }> = []
-        for (const m of items) {
-            if (!isNullOrUndefined(m.fileHash) && !m.fileHash.isEmpty()) {
-                hashToId.set(m.fileHash, m.id)
-            }
-            if (!isNullOrUndefined(m.title) && !m.title.isEmpty()) {
-                const lowerTitle = m.title.toLowerCase()
-                titleContains.push({ id: m.id, lowerTitle })
-                for (const token of lowerTitle.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)) {
-                    if (!tokenToId.has(token)) tokenToId.set(token, m.id)
-                }
-            }
-        }
-
-        // 使用轻量级键遍历（只读视频 ID，不反序列化整个对象）
-        const keyIterator = db.iterateVideoKeysBatched(10240)
-        let idx = 0
-        let currentBatch: string[] = []
-        let keyBatchIter = keyIterator[Symbol.asyncIterator]()
-        let prefetchDone = false
-        let prefetchPromise: Promise<void> | null = null
-        const batchQueue: string[][] = []
-
-        const prefetchNextBatch = async (): Promise<void> => {
-            const t0 = Date.now()
-            const { value, done } = await keyBatchIter.next()
-            log.debug(`批次获取: ${((Date.now() - t0) / 1000).toFixed(1)}s（${value?.length ?? 0} 条）`)
-            if (done) {
-                prefetchDone = true
-            } else {
-                batchQueue.push(value)
-            }
-        }
-
-        const ensureBatch = async (): Promise<boolean> => {
-            if (batchQueue.length > 0) return true
-            if (prefetchDone) return false
-            if (!prefetchPromise) {
-                prefetchPromise = prefetchNextBatch().finally(() => {
-                    prefetchPromise = null
-                })
-            }
-            await prefetchPromise
-            return batchQueue.length > 0
-        }
-
-        // 启动第一批预取
-        prefetchPromise = prefetchNextBatch().finally(() => {
-            prefetchPromise = null
-        })
-
-        const nextVideo = async (): Promise<void> => {
-            if (idx >= currentBatch.length) {
-                if (!(await ensureBatch())) return
-                currentBatch = batchQueue.shift()!
-                idx = 0
-                if (batchQueue.length < 2 && !prefetchDone && !prefetchPromise) {
-                    prefetchPromise = prefetchNextBatch().finally(() => {
-                        prefetchPromise = null
-                    })
-                }
-            }
-            const videoId = currentBatch[idx++]
-            processedCount++
-            if (Date.now() - stepStartTime >= 500 || processedCount === 1 || processedCount === total) {
-                listProgressNode.firstChild!.textContent = `正在匹配映射... [${processedCount}/${total}] 已映射: ${matchedMap.size}`
-            }
-            if (matchedMap.has(videoId)) return nextVideo()
-
-            // 1) fileHash 精确匹配 O(1)
-            if (hashToId.has(videoId)) {
-                const mcId = hashToId.get(videoId)!
-                matchedMap.set(videoId, mcId)
-                entriesToSave.push({ videoId, mediaCenterId: mcId })
-                return nextVideo()
-            }
-
-            // 2) title token 快速命中 O(1)
-            const videoIdLower = videoId.toLowerCase()
-            if (tokenToId.has(videoIdLower)) {
-                const mcId = tokenToId.get(videoIdLower)!
-                matchedMap.set(videoId, mcId)
-                entriesToSave.push({ videoId, mediaCenterId: mcId })
-                return nextVideo()
-            }
-
-            // 3) 回退：title 包含匹配（仅 token 未命中的极少数情况）
-            for (const tc of titleContains) {
-                if (tc.lowerTitle.indexOf(videoIdLower) !== -1) {
-                    matchedMap.set(videoId, tc.id)
-                    entriesToSave.push({ videoId, mediaCenterId: tc.id })
-                    break
-                }
-            }
-
-            return nextVideo()
-        }
-        await Promise.allSettled(Array.from({ length: Math.min(64, total) }, () => nextVideo()))
-
-        log.debug(`步骤3/4 遍历数据库匹配映射: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s（${processedCount} 条，映射 ${entriesToSave.length} 条）`)
-        stepStartTime = Date.now()
-
-        if (entriesToSave.length > 0) {
-            await db.bulkPutMediaCenterIdMaps(entriesToSave)
-        }
-
-        log.debug(`步骤4/4 保存映射到本地: ${((Date.now() - stepStartTime) / 1000).toFixed(1)}s`)
-        const totalTime = (Date.now() - phaseStartTime) / 1000
-
-        listProgressNode.firstChild!.textContent = `映射建立完成，共 ${matchedMap.size} 条映射（新增 ${entriesToSave.length} 条），总耗时 ${totalTime.toFixed(1)}s`
-    } catch (error) {
-        log.error('拉取列表失败:', stringify(error))
-        listProgressToast.hide()
-        newToast(ToastType.Error, {
-            node: toastNode([`MediaCenter 列表拉取失败，请检查 API 地址和密钥`, { nodeType: 'br' }, stringify(error)], 'MediaCenter 同步'),
-            duration: 10000,
-            close: true,
-            onClick() {
-                this.hide()
-            }
-        }).show()
-        return
+    if (!response.ok) {
+        throw new Error(`拉取 MediaCenter 列表失败: ${response.status} ${await response.text()}`)
     }
+    const result = (await response.json()) as { items?: MediaCenterListItem[] }
+    return isNullOrUndefined(result.items) ? [] : result.items
+}
 
-    listProgressToast.hide()
-
-    if (matchedMap.size === 0) {
-        newToast(ToastType.Info, {
-            text: `MediaCenter 中未找到包含 fileHash 的视频记录，无法同步`,
-            duration: 3000
-        }).show()
-        return
-    }
-
-    // ── 阶段二：遍历匹配项，解析完整元数据并更新到 MediaCenter ──
-    let updated = 0
-    let skipped = 0
-    let updateErrors = 0
-
-    const updateProgressNode = renderNode({
-        nodeType: 'p',
-        childs: `MediaCenter 更新中... [0/${matchedMap.size}]`
+/** 校验 MediaCenter 记录是否存在（GET /api/media/:id），返回是否 2xx */
+export async function mediaCenterRecordExists(mediaCenterId: string): Promise<boolean> {
+    const checkRes = await unlimitedFetch(`${mediaCenterApiBase()}/api/media/${mediaCenterId}`, {
+        method: 'GET',
+        headers: mediaCenterAuthHeaders()
     })
-    const updateProgressToast = newToast(ToastType.Info, {
-        node: updateProgressNode,
-        duration: -1
+    return checkRes.ok
+}
+
+/** createMedia 请求结果 */
+export type CreateMediaResult =
+    | { ok: true; id: string }
+    | { ok: false; conflict?: { existingId?: string }; status?: number; error?: string }
+
+/** 创建媒体记录（POST /api/media，用视频 ID 作 fileHash 去重）。409 冲突时带出 existingId。 */
+export async function createMedia(body: { filePath: string; fileHash: string }): Promise<CreateMediaResult> {
+    const createRes = await unlimitedFetch(`${mediaCenterApiBase()}/api/media`, {
+        method: 'POST',
+        headers: mediaCenterAuthHeaders(),
+        body: JSON.stringify(body)
     })
-    updateProgressToast.show()
-
-    const matchedIds = [...matchedMap.keys()]
-    const concurrency = 6
-    let idx = 0
-    const nextUpdate = async () => {
-        if (idx >= matchedIds.length) return
-        const i = idx++
-        const videoId = matchedIds[i]
-        const mediaCenterId = matchedMap.get(videoId)!
-        try {
-            let video = (await db.getVideoById(videoId)) ?? { Type: 'init', ID: videoId }
-            if (video.Type !== 'full') {
-                const pvideo = await parseVideoInfo(video)
-                video = getMoreCompleteVideoInfo(video, pvideo)
-            }
-
-            if (video.Type === 'cache' || video.Type === 'init') {
-                skipped++
-                return
-            }
-            db.putVideo(video)
-            if (await pushToMediaCenter(video as FullVideoInfo, mediaCenterId)) {
-                updated++
-            } else {
-                updateErrors++
-            }
-        } catch (error) {
-            log.warn(`同步异常 ${videoId}:`, stringify(error))
-            updateErrors++
-        } finally {
-            updateProgressNode.firstChild!.textContent = `MediaCenter 更新中... [${updated + skipped + updateErrors}/${matchedMap.size}] 更新: ${updated} 跳过: ${skipped} 错误: ${updateErrors}`
-            if (idx < matchedIds.length) await delay(100)
-            await nextUpdate()
-        }
+    if (createRes.status === 409) {
+        const conflict = (await createRes.json()) as { error: string; existingId?: string; existingTitle?: string }
+        return { ok: false, conflict: { existingId: conflict.existingId }, error: conflict.error }
     }
-    await Promise.allSettled(Array.from({ length: Math.min(concurrency, matchedIds.length) }, () => nextUpdate()))
+    if (!createRes.ok) {
+        return { ok: false, status: createRes.status, error: await createRes.text() }
+    }
+    const createResult = (await createRes.json()) as { error?: string; id?: string }
+    if (createResult.error) return { ok: false, error: createResult.error }
+    if (!createResult.id || createResult.id.isEmpty()) return { ok: false, error: 'no id returned' }
+    return { ok: true, id: createResult.id }
+}
 
-    updateProgressToast.hide()
+/** updateMedia 结果 */
+export type UpdateMediaResult = { ok: true } | { ok: false; status?: number; error?: string }
 
-    newToast(ToastType.Info, {
-        text: `MediaCenter 同步完成！已更新: ${updated}, 跳过: ${skipped}, 错误: ${updateErrors}`,
-        duration: 5000,
-        close: true,
-        onClick() {
-            this.hide()
-        }
-    }).show()
+/** 更新媒体元数据（PUT /api/media/:id）。404 时明确标记（调用方删除本地映射）。 */
+export async function updateMedia(mediaCenterId: string, body: Record<string, unknown>): Promise<UpdateMediaResult> {
+    const updateRes = await unlimitedFetch(`${mediaCenterApiBase()}/api/media/${mediaCenterId}`, {
+        method: 'PUT',
+        headers: mediaCenterAuthHeaders(),
+        body: JSON.stringify(body)
+    })
+    if (!updateRes.ok) {
+        return { ok: false, status: updateRes.status, error: await updateRes.text() }
+    }
+    const updateResult = (await updateRes.json()) as { error?: string; media?: Record<string, unknown> }
+    if (updateResult.error) return { ok: false, error: updateResult.error }
+    if (!updateResult.media) return { ok: false, error: 'no media returned' }
+    return { ok: true }
 }

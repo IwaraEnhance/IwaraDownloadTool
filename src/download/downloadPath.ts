@@ -1,9 +1,19 @@
 import '../core/env'
 import { stringify } from '../core/env'
 import { Path } from '../core/path'
-import { ToastType } from '../core/enum'
 import { config } from '../core/config'
-import { newToast, toastNode } from '../ui/notify'
+import { report, toastNode } from '../core/notify'
+
+/** 从视频信息构建带 videoid/download 参数的下载地址：
+ * - videoid：任务反查视频 ID 的机制基础（aria2TaskExtractVideoID / 跨页追踪依赖）；
+ * - download：本地文件名（执行器识别下载文件名）。
+ * 三个执行器（aria2 / others）统一从本入口取富化后的地址，禁止裸传 DownloadUrl。 */
+export function buildDownloadUrl(videoInfo: FullVideoInfo, localPath: Path): URL {
+    const url = videoInfo.DownloadUrl.toURL()
+    url.searchParams.set('videoid', videoInfo.ID)
+    url.searchParams.set('download', localPath.fullName)
+    return url
+}
 
 /**
  * 根据视频信息生成下载路径
@@ -37,21 +47,20 @@ export function getDownloadPath(videoInfo: FullVideoInfo): Path {
 /**
  * 分析本地路径并返回Path对象
  * @param {string} path - 要分析的路径字符串
- * @returns {Path} 返回Path对象
- * @throws {Error} 如果路径无效会抛出错误并显示Toast通知
+ * @returns {Path} 返回生成的路径对象
+ * @throws {Error} 如果路径无效会抛出错误（报告经 core/notify，展示由 sink 完成）
  */
 export function analyzeLocalPath(path: string): Path {
     try {
         return new Path(path)
     } catch (error) {
-        let toast = newToast(ToastType.Error, {
-            node: toastNode([`%#downloadPathError#%`, { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
+        // 报告经 core/notify 通道（报告展示由 sink 完成，见 main 组装）
+        report('error', {
+            title: '%#settingsCheck#%',
+            body: toastNode(['%#downloadPathError#%', { nodeType: 'br' }, stringify(error)], '%#settingsCheck#%'),
             position: 'center',
-            onClick() {
-                toast.hide()
-            }
+            onClick: (host) => (host as { hide(): void })?.hide()
         })
-        toast.show()
         throw new Error(`%#downloadPathError#% ["${path}"]`)
     }
 }

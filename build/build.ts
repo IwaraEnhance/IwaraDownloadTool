@@ -23,6 +23,7 @@ import inlineCSS from './inlineCSS.ts'
 import minifyModules from './minifyModules.ts'
 import { i18nPlugin } from './generate-i18n.ts'
 import { log, success, error } from './log.ts'
+import { loadMata, serializeUserscriptHeader, replaceTemplateVars } from './mata.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -30,9 +31,7 @@ const root = join(__dirname, '..')
 
 const distPath = join(root, 'dist')
 const sourcePath = join(root, 'src')
-const packagePath = join(root, 'package.json')
 const tsconfigPath = join(root, 'tsconfig.json')
-const mataTemplatePath = join(sourcePath, 'mata', 'userjs.mata')
 
 function ensureDir(path: string) {
     if (!existsSync(path)) mkdirSync(path, { recursive: true })
@@ -56,9 +55,9 @@ function parseChannel(raw: string | undefined): Channel {
     return channel
 }
 
-/** 计算产物版本号：dev 渠道附加 -dev.<uuid> 保证每次构建可区分，preview/latest 使用 package.json 版本 */
-function resolveVersion(packageVersion: string, channel: Channel): string {
-    return channel === 'dev' ? `${packageVersion}-dev.${UUID()}` : packageVersion
+/** 计算产物版本号：dev 渠道附加 -dev.<uuid> 保证每次构建可区分，preview/latest 使用 mata.json 版本（v${pkg}） */
+function resolveVersion(mataVersion: string, channel: Channel): string {
+    return channel === 'dev' ? `${mataVersion}-dev.${UUID()}` : mataVersion
 }
 
 /** 输出 dist 产物清单与大小 */
@@ -84,81 +83,6 @@ function cleanUnminifiedOutput(text: string): string {
         .replace(/\/\/ (?![@=]).*$/gm, '')
         .replace(/\r\n?|\n/g, '\r\n')
         .replace(/^\s*$/gm, '')
-}
-
-interface MetadataDict {
-    [key: string]: string | (string | null)[] | null
-}
-
-function parseMetadata(content: string): MetadataDict {
-    const startTag = '// ==UserScript=='
-    const endTag = '// ==/UserScript=='
-
-    const startIndex = content.indexOf(startTag)
-    if (startIndex === -1) throw new Error('No metadata block found')
-
-    const bodyStart = startIndex + startTag.length
-    const endIndex = content.indexOf(endTag, bodyStart)
-    if (endIndex === -1) throw new Error('Unclosed metadata block')
-
-    const block = content.slice(bodyStart, endIndex)
-
-    const lines = block
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.startsWith('// @'))
-        .map((l) => l.replace('// @', '').trim())
-
-    if (lines.length === 0) throw new Error('No metadata entries found')
-
-    const results: MetadataDict = {}
-
-    for (const line of lines) {
-        const spaceIdx = line.indexOf(' ')
-        const key = spaceIdx === -1 ? line : line.slice(0, spaceIdx)
-        const value = spaceIdx === -1 ? null : line.slice(spaceIdx + 1).trim()
-
-        if (!key) continue
-
-        if (results[key] !== undefined) {
-            const existing = results[key]
-            if (Array.isArray(existing)) {
-                existing.push(value)
-            } else {
-                results[key] = [existing, value]
-            }
-        } else {
-            results[key] = value
-        }
-    }
-
-    return results
-}
-
-function serializeMetadata(metadata: MetadataDict): string {
-    const keys = Object.keys(metadata)
-    const maxLen = keys.reduce((a, b) => (a.length > b.length ? a : b), '').length
-    const pad = maxLen + 1
-
-    const lines: string[] = ['// ==UserScript==']
-
-    for (const [key, value] of Object.entries(metadata)) {
-        const values = Array.isArray(value) ? value : [value]
-        for (const v of values) {
-            if (v === null) {
-                lines.push(`// @${key}`)
-            } else {
-                lines.push(`// @${key.padEnd(pad, ' ')}${v}`)
-            }
-        }
-    }
-
-    lines.push('// ==/UserScript==')
-    return lines.join('\r\n')
-}
-
-function replaceTemplateVars(text: string, vars: Record<string, string>): string {
-    return text.replace(/%#(\w+)#%/g, (_, key) => vars[key] ?? _)
 }
 
 function typeCheck(): void {
@@ -188,50 +112,43 @@ async function main() {
     ensureDir(distPath)
 
     // 读取配置
-    const packageInfo = JSON.parse(readFileSync(packagePath, 'utf8'))
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8'))
-    const displayName = packageInfo.displayName
+    // 项目权威信息源（mata.json：产物名/版本/元数据/e2e 交接点，替代 package.json+userjs.mata 双源）
+    const mata = loadMata()
+    const e2eConfig = mata.e2e ?? {}
 
-    // 解析 metadata 模板
-    const mataTemplate = parseMetadata(readFileSync(mataTemplatePath, 'utf8'))
-
-    // 渠道与版本：updateURL/downloadURL 中的 %#release_tag#% 即发布渠道
+    // 渠道与版本：dev 附加 -dev.<uuid>（防意外更新），preview/latest 用 mata.json 版本
     const channel = parseChannel(process.argv[2])
-    const version = resolveVersion(packageInfo.version, channel)
-    mataTemplate.version = version
+    const version = resolveVersion(mata.version, channel)
     log('build', `渠道: ${channel}，版本: ${version}`)
 
-    // 替换 URL 占位符
+    // 产物名基座（mata.displayName 单一来源；产物名与 URL 文件名段均由它派生）
+    const baseName = mata.displayName
+
+    // 模板变量（%#release_tag#% / %#display_name#% 等）
     const vars: Record<string, string> = {
         release_tag: channel,
-        display_name: displayName,
+        display_name: baseName,
         version: version
     }
-    if (typeof mataTemplate.updateURL === 'string') {
-        mataTemplate.updateURL = replaceTemplateVars(mataTemplate.updateURL, vars)
-    }
-    if (typeof mataTemplate.downloadURL === 'string') {
-        mataTemplate.downloadURL = replaceTemplateVars(mataTemplate.downloadURL, vars)
-    }
 
-    // 序列化 metadata 并替换模板变量
-    let matadata = serializeMetadata(mataTemplate)
-    matadata = replaceTemplateVars(matadata, vars)
+    // 序列化 userscript 头（updateURL/downloadURL 等含模板占位符在此一并替换）
+    const header = replaceTemplateVars(serializeUserscriptHeader(mata, version), vars)
 
     // 写入 .mata.js 文件（供 Tampermonkey 检查更新用）
-    const mataTempPath = join(distPath, `${displayName}.mata.js`)
-    writeFileSync(mataTempPath, matadata)
+    const mataTempPath = join(distPath, `${baseName}.mata.js`)
+    writeFileSync(mataTempPath, header)
 
-    // 编译入口
-    const mainPath = join(sourcePath, 'main.ts')
-    const distCompressPath = join(distPath, `${displayName}.min.user.js`)
-    const distUncompressPath = join(distPath, `${displayName}.user.js`)
+    // 编译入口（构建入口 = mata.e2e.entry，缺省 src/main.ts）
+    const mainPath = join(root, e2eConfig.entry ?? 'src/main.ts')
+    const distCompressPath = join(distPath, `${baseName}.min.user.js`)
+    const distUncompressPath = join(distPath, `${baseName}.user.js`)
 
     const sharedOptions: esbuild.BuildOptions = {
         format: 'iife',
         entryPoints: [mainPath],
         bundle: true,
-        banner: { js: matadata },
+        banner: { js: header },
         loader: { '.json': 'json' },
         platform: 'browser',
         target: ['es2022', 'chrome110', 'edge110', 'firefox110', 'safari16.4'],
@@ -265,7 +182,59 @@ async function main() {
         error('build', `构建失败：${result.errors}`)
         process.exit(1)
     }
-
+    // e2e 探针脚本（仅 dev 渠道 + mata.e2e.probeEntry 声明探针的项目才构建）：
+    // ⚠️ 刻意不带 @noframes —— GM 存储按脚本分域（跨脚本彼此不可见），「标签 ≤ 1」
+    // 约束下真 remote 事件的唯一通路 = 同一脚本在同页顶 frame + 子 frame 的两个实例。
+    // 宿主 = e2e 起的本地服务页面（127.0.0.1，零风控暴露、无外网依赖，CI 无头可跑）。
+    // 渠道门在源头：preview/latest 是发布产出，dist 天然无探针，CI 无需任何过滤；
+    // dev 是本地/CI 测试验证渠道，探针只在此存在。
+    if (channel === 'dev' && e2eConfig.probeEntry) {
+        // 探针 grant 从主脚本 mata.grant 派生（防手工枚举漏项）：GM 存储族 +
+        // ⚠️ unsafeWindow（探针把操作口对象挂 unsafeWindow 供主世界 evaluate 直调，
+        // 漏此权限 = 探针沙箱内 unsafeWindow 为 undefined，e2e 全线 not ready）
+        const GM_STORAGE_GRANTS = new Set([
+            'GM_getValue',
+            'GM_setValue',
+            'GM_deleteValue',
+            'GM_listValues',
+            'GM_addValueChangeListener',
+            'GM_removeValueChangeListener',
+            'unsafeWindow'
+        ])
+        const probeGrants = [...new Set([...(mata.grant ?? []), 'GM_info'])].filter((g) => GM_STORAGE_GRANTS.has(g) || g === 'GM_info')
+        if (!probeGrants.includes('unsafeWindow')) {
+            error('build', `探针 grant 缺 unsafeWindow（主脚本 mata.grant 未声明），无法暴露操作口——请在 mata.json grant 中补 "unsafeWindow"`)
+            process.exit(1)
+        }
+        const e2eHeader = serializeUserscriptHeader(
+            {
+                ...mata,
+                name: { default: `${baseName} E2E Probe` },
+                description: { default: 'e2e-only probe: real-GM bridge for cross-context storage tests' },
+                noframes: undefined,
+                // e2e-only 本地产物：剥离主脚本的发布更新链路（updateURL/downloadURL
+                // 指向主产物，探针若携带会在 latest 渠道验证构建时被管理器误跟更新）
+                updateURL: undefined,
+                downloadURL: undefined,
+                grant: probeGrants,
+                include: ['http://127.0.0.1/*', 'https://127.0.0.1/*'],
+                match: ['http://127.0.0.1/*', 'http://127.0.0.1/*/*'],
+                'run-at': 'document-start'
+            },
+            version
+        )
+        await esbuild.build({
+            ...sharedOptions,
+            entryPoints: [join(root, e2eConfig.probeEntry)],
+            allowOverwrite: true,
+            outfile: join(distPath, `${baseName}.e2e-test.user.js`),
+            banner: { js: replaceTemplateVars(e2eHeader, vars) },
+            minify: false,
+            treeShaking: false,
+            sourcemap: false,
+            plugins: []
+        })
+    }
     logArtifacts()
     success('build', '构建完成')
 }

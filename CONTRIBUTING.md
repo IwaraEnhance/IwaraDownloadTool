@@ -95,6 +95,10 @@ IwaraDownloadTool/
 │   └── tsconfig.json
 ├── src/                    # 源代码
 │   ├── main.ts             # 入口文件
+│   ├── core/               # 基础库：配置/路径/存储/注入调度（injectionWatcher）等
+│   ├── network/            # Iwara API、登录凭证、fetch 拦截
+│   ├── download/           # 下载器（Aria2/iwaradl/浏览器）与任务追踪
+│   ├── ui/                 # 侧边菜单、配置面板、通知
 │   ├── i18n/               # 国际化 JSON 文件
 │   │   ├── en.json
 │   │   ├── ja.json
@@ -138,6 +142,10 @@ IwaraDownloadTool/
 - 所有用户可见文本必须使用国际化键
 - 新增文本需同步更新 `src/i18n/` 下所有语言的 JSON 文件
 - 开发时推荐运行 `npm run dev:i18n`，它会监听 JSON 文件变更并自动重新生成 `src/i18n.ts`
+
+### 页面注入（UI 控件）
+
+向页面注入按钮/控件时，请复用 `src/core/injectionWatcher.ts` 的规则式调度（注册 `InjectionRule`），不要自建 MutationObserver。具体用法与注意事项见该文件内注释。
 
 ### 测试
 

@@ -1,3 +1,7 @@
 {
-    "recommendations": ["aaron-bond.better-comments", "kisstkondoros.vscode-gutter-preview", "vscode-icons-team.vscode-icons", "codfrm.scriptcat-vscode"]
+    "recommendations": [
+        "aaron-bond.better-comments",
+        "kisstkondoros.vscode-gutter-preview",
+        "vscode-icons-team.vscode-icons"
+    ]
 }

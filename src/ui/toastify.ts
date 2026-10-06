@@ -33,7 +33,7 @@ const addTimeout = (toast: Toast, callback: () => void): void => {
     }, duration)
     toastTimeouts.set(toast, timeoutId)
 
-    if (!toast.showProgress) return
+    if (!toast.showProgress || !isNullOrUndefined(toast.ratioProgress)) return
     if (isNullOrUndefined(toast.progress)) return
     // 进度条由纯 CSS animation 驱动（替代 20ms setInterval 写 CSS 变量）
     // duration 变化或重新计时（mouseleave 恢复）时：移除动画 + 强制 reflow 后恢复，从头播放
@@ -50,11 +50,20 @@ const delTimeout = (toast: Toast): void => {
         clearTimeout(timeoutId)
         toastTimeouts.delete(toast)
     }
-    if (!toast.showProgress) return
+    if (!toast.showProgress || !isNullOrUndefined(toast.ratioProgress)) return
     // 暂停进度条动画（mouseover 暂停 / hide 时停止，不再需要 interval）
     if (!isNullOrUndefined(toast.progress)) {
         toast.progress.style.animationPlayState = 'paused'
     }
+}
+/** 交互式提示按钮：渲染在 toast 内容下方的一行按钮（与整个 toast 的 onClick 互斥） */
+export interface ToastButton {
+    /** 按钮文本（支持 %#i18nKey#% 占位符，newToast 会替换） */
+    text: string
+    /** 按钮附加类名（用于样式定制） */
+    className?: string
+    /** 点击回调：参数为所属 toast 实例，可调用 hide() 收起 */
+    onClick: (toast: Toast) => void
 }
 export interface ToastOptions {
     id?: string
@@ -68,10 +77,18 @@ export interface ToastOptions {
     className?: string | string[]
     stopOnFocus?: boolean
     showProgress?: boolean
+    /**
+     * 确定性进度条（0~1）：按任务完成占比直接渲染 scaleX，不经倒计时动画。
+     * 与 showProgress（倒计时进度条）互斥：提供 progressRatio 时机型为任务进度。
+     * 后续更新经 Toast.setProgressRatio(ratio) 原地刷新。*/
+    progressRatio?: number
     /** 动画速度倍率（>1 变慢、<1 变快），通过 --toast-rate 缩放该 toast 的淡入淡出时长 */
     rate?: number
+    /** 余字段同前 */
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
+    /** 交互式按钮行（与 onClick 互斥：提供后整个 toast 的 onClick 不生效，点击主体无行为） */
+    buttons?: ToastButton[]
     style?: Partial<CSSStyleDeclaration>
     oldestFirst?: boolean
 }
@@ -82,6 +99,8 @@ interface Options {
     stopOnFocus: boolean
     oldestFirst: boolean
     showProgress: boolean
+    /** 确定性进度条（0~1）；与 showProgress（倒计时型）互斥 */
+    progressRatio?: number
     rate: number
     text?: string
     node?: Node
@@ -90,6 +109,7 @@ interface Options {
     className?: string | string[]
     onClose?: (this: Toast, e: CustomEvent<{ reason: CloseReason }>) => void
     onClick?: (this: Toast, e: MouseEvent) => void
+    buttons?: ToastButton[]
     style?: Partial<CSSStyleDeclaration>
 }
 /**
@@ -115,6 +135,10 @@ export class Toast {
     public oldestFirst: boolean
     public stopOnFocus: boolean
     public showProgress: boolean
+    /** 确定性进度条（progressRatio 型）：setProgressRatio 原地刷新 scaleX */
+    public ratioProgress?: HTMLDivElement
+    /** 当前确定性进度值（undefined = 非任务进度型） */
+    private progressRatioValue?: number
     public content?: HTMLDivElement
     public progress?: HTMLDivElement
     private mouseOverHandler?: () => void
@@ -136,6 +160,11 @@ export class Toast {
             ...options,
             id: this.id
         }
+        // ── 参数互斥 ──
+        // text 与 node 互斥：同时给出时 node 优先，text 忽略
+        if (this.options.text && this.options.node) delete this.options.text
+        // buttons 与 onClick 互斥：提供交互按钮时，整个 toast 的 onClick 不生效（点击主体无行为）
+        if (this.options.buttons && this.options.buttons.length > 0) delete this.options.onClick
         this.root = getContainer(this.options.gravity, this.options.position)
         this.gravity = this.options.gravity
         this.position = this.options.position
@@ -177,9 +206,58 @@ export class Toast {
             this.progress.classList.add('toast-progress')
             this.content.appendChild(this.progress)
         }
+        if (this.options.progressRatio !== undefined) {
+            this.ratioProgress = document.createElement('div')
+            this.ratioProgress.classList.add('toast-progress')
+            this.ratioProgress.style.animation = 'none' // 任务进度型不经倒计时动画（scaleX 由 setProgressRatio 直接控制）
+            this.content.appendChild(this.ratioProgress)
+            this.setProgressRatio(this.options.progressRatio)
+        }
+        if (this.options.buttons && this.options.buttons.length > 0) {
+            // 交互式按钮行：渲染在内容末尾，点击按钮阻断冒泡（不触发整个 toast 的 onClick，运行时互斥保证）
+            const buttonsRow = document.createElement('div')
+            buttonsRow.classList.add('toast-buttons')
+            for (const btn of this.options.buttons) {
+                const button = document.createElement('button')
+                button.textContent = btn.text
+                if (btn.className) button.className = btn.className
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    btn.onClick(this)
+                })
+                buttonsRow.appendChild(button)
+            }
+            this.content.appendChild(buttonsRow)
+        }
         this.element.appendChild(this.content)
         return this
     }
+    /**
+     * 原地刷新确定性进度条（0~1）；仅在构造时提供了 progressRatio 的 toast 上有效
+     */
+    public setProgressRatio(ratio: number): this {
+        if (isNullOrUndefined(this.ratioProgress)) return this
+        this.progressRatioValue = Math.max(0, Math.min(1, ratio))
+        this.ratioProgress.style.transform = `scaleX(${this.progressRatioValue})`
+        return this
+    }
+
+    /**
+     * 原地刷新文本（仅 text 载荷型 toast；node 载荷的内容由调用方自管）。
+     * 只替换首个文本节点，保留可能存在的进度条/按钮行等兄弟元素。
+     */
+    public setText(text: string): this {
+        if (this.options.node !== undefined || isNullOrUndefined(this.content)) return this
+        this.options.text = text
+        const first = this.content.firstChild
+        if (first && first.nodeType === Node.TEXT_NODE) {
+            first.textContent = text
+        } else {
+            this.content.insertBefore(document.createTextNode(text), this.content.firstChild)
+        }
+        return this
+    }
+
     private addCloseButton(): this {
         if (this.options.close) {
             this.closeButton = document.createElement('span')
@@ -207,7 +285,8 @@ export class Toast {
         return this
     }
     private ensureCloseMethod(): this {
-        if (isNullOrUndefined(this.options.duration) && isNullOrUndefined(this.options.close) && isNullOrUndefined(this.options.onClick)) {
+        // 有交互按钮时不自动补「点击主体隐藏」——按钮已承载交互，点击主体应无行为
+        if (isNullOrUndefined(this.options.duration) && isNullOrUndefined(this.options.close) && isNullOrUndefined(this.options.onClick) && isNullOrUndefined(this.options.buttons)) {
             this.options.onClick = () => this.hide('other')
         }
         return this
@@ -222,6 +301,8 @@ export class Toast {
         if (!isNullOrUndefined(this.options.onClick)) {
             this.clickHandler = this.options.onClick.bind(this)
             this.element.addEventListener('click', this.clickHandler)
+            // 有点击行为的 toast 才显示手型光标（CSS: .toast.clickable .toast-content）
+            this.element.classList.add('clickable')
         }
         return this
     }
@@ -352,7 +433,7 @@ declare global {
 }
 globalThis.Toast = createToast
 globalThis.Toastify = createToast
-;(document.body ?? document.documentElement).appendChild(offscreenContainer)
+    ; (document.body ?? document.documentElement).appendChild(offscreenContainer)
 window.addEventListener(
     'resize',
     debounce(() => {

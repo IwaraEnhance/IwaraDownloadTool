@@ -1,26 +1,26 @@
 import '../core/env'
 import { isNullOrUndefined, stringify } from '../core/env'
-import { i18nList } from '../i18n'
 import { ToastType } from '../core/enum'
 import { config } from '../core/config'
 import { unlimitedFetch } from '../core/extension'
 import { createLogger } from '../core/log'
 import { db } from '../core/db'
 import { getAuth, refreshToken } from './auth'
-import { newToast, toastNode } from '../ui/notify'
 
 const log = createLogger('Video')
-import { apiEndpoint } from '../main'
+import { apiUrl } from '../context/site'
 
-async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage> {
-    return (await (await unlimitedFetch(`https://${apiEndpoint}/video/${id}/comments?page=${page}${!isNullOrUndefined(commentID) && !commentID.isEmpty() ? '&parent=' + commentID : ''}`, { headers: await getAuth() })).json()) as Iwara.IPage
+async function getCommentData(id: string, commentID?: string, page: number = 0): Promise<Iwara.IPage<Iwara.Comment>> {
+    const query = new URLSearchParams({ page: String(page) })
+    if (!isNullOrUndefined(commentID) && !commentID.isEmpty()) query.set('parent', commentID)
+    return (await (await unlimitedFetch(apiUrl(`/video/${id}/comments`, query), { headers: await getAuth() })).json()) as Iwara.IPage<Iwara.Comment>
 }
 async function getCommentDatas(id: string, commentID?: string): Promise<Iwara.Comment[]> {
     let comments: Iwara.Comment[] = []
     let base = await getCommentData(id, commentID)
-    comments.push(...(base.results as Iwara.Comment[]))
+    comments.push(...base.results)
     for (let page = 1; page < Math.ceil(base.count / base.limit); page++) {
-        comments.push(...((await getCommentData(id, commentID, page)).results as Iwara.Comment[]))
+        comments.push(...(await getCommentData(id, commentID, page)).results)
     }
     let replies: Iwara.Comment[] = []
     for (let index = 0; index < comments.length; index++) {
@@ -51,7 +51,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 log.debug('try parse full source')
                 let sourceResult = (await (
                     await unlimitedFetch(
-                        `https://${apiEndpoint}/video/${info.ID}`,
+                        apiUrl(`/video/${info.ID}`),
                         {
                             headers: await getAuth()
                         },
@@ -71,11 +71,14 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 ).json()) as Iwara.IResult
                 if (isNullOrUndefined(sourceResult.id)) {
                     Type = 'fail'
+                    const Msg = sourceResult.message ?? stringify(sourceResult)
+                    // 失败以返回值表达，调用方（feature 层）负责提示
+                    log.warn(`parse video failed [${ID}]: ${Msg}`)
                     return {
                         ID,
                         Type,
                         RAW,
-                        Msg: sourceResult.message ?? stringify(sourceResult)
+                        Msg
                     }
                 }
                 RAW = sourceResult as Iwara.Video
@@ -92,12 +95,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                 }
         }
     } catch (error) {
-        newToast(ToastType.Error, {
-            node: toastNode([`${info.RAW?.title}[${ID}] %#parsingFailed#%`], '%#createTask#%'),
-            async onClick() {
-                this.hide()
-            }
-        }).show()
+        log.warn(`parse video error [${ID}]:`, error)
         Type = 'fail'
         return {
             ID,
@@ -138,7 +136,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
     Unlisted = RAW.unlisted
 
     External = !isNullOrUndefined(RAW.embedUrl) && !RAW.embedUrl.isEmpty()
-    ExternalUrl = RAW.embedUrl
+    ExternalUrl = RAW.embedUrl ?? undefined
 
     if (External) {
         Type = 'fail'
@@ -180,17 +178,19 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
                     await db.deleteFriend(AuthorID)
                 }
 
-                Description = RAW.body
+                Description = RAW.body ?? undefined
                 FileName = RAW.file.name
                 Size = RAW.file.size
-                let VideoFileSource = ((await (await unlimitedFetch(RAW.fileUrl, { headers: await getAuth(RAW.fileUrl) })).json()) as Iwara.Source[]).sort((a, b) => (!isNullOrUndefined(config.priority[b.name]) ? config.priority[b.name] : 0) - (!isNullOrUndefined(config.priority[a.name]) ? config.priority[a.name] : 0))
-                if (isNullOrUndefined(VideoFileSource) || !(VideoFileSource instanceof Array) || VideoFileSource.length < 1) throw new Error(i18nList[config.language].getVideoSourceFailed.toString())
+                // 拉取文件源列表并按配置优先级降序排序（优先级缺失的源视作 0）
+                const sourceResponse = await unlimitedFetch(RAW.fileUrl, { headers: await getAuth(RAW.fileUrl) })
+                const VideoFileSource = ((await sourceResponse.json()) as Iwara.Source[]).sort((a, b) => (!isNullOrUndefined(config.priority[b.name]) ? config.priority[b.name] : 0) - (!isNullOrUndefined(config.priority[a.name]) ? config.priority[a.name] : 0))
+                if (isNullOrUndefined(VideoFileSource) || !(VideoFileSource instanceof Array) || VideoFileSource.length < 1) throw new Error('No available video source')
                 DownloadQuality = config.checkPriority ? config.downloadPriority : VideoFileSource[0].name
                 let fileList = VideoFileSource.filter((x) => x.name === DownloadQuality)
-                if (!fileList.any()) throw new Error(i18nList[config.language].noAvailableVideoSource.toString())
+                if (!fileList.any()) throw new Error('No video source matches the priority')
 
                 let Source = fileList[Math.floor(Math.random() * fileList.length)].src.download
-                if (isNullOrUndefined(Source) || Source.isEmpty()) throw new Error(i18nList[config.language].videoSourceNotAvailable.toString())
+                if (isNullOrUndefined(Source) || Source.isEmpty()) throw new Error('Video source not available')
 
                 DownloadUrl = decodeURIComponent(`https:${Source}`)
 
@@ -261,6 +261,8 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
         }
     } catch (error) {
         Type = 'fail'
+        const Msg = stringify(error)
+        log.warn(`parse video fields error [${ID}]:`, error)
         return {
             Type,
             RAW,
@@ -277,7 +279,7 @@ export async function parseVideoInfo(info: VideoInfo): Promise<FullVideoInfo | P
             ExternalUrl,
             Description,
             Unlisted,
-            Msg: stringify(error)
+            Msg
         }
     }
 }

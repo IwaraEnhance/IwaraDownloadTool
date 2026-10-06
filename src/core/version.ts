@@ -125,6 +125,26 @@ export class Version implements IVersion {
         return VersionState.Equal
     }
     /**
+     * 基座版本比较：仅比较 MAJOR.MINOR.PATCH，忽略预发布段与构建元数据。
+     *
+     * 这是版本迁移门控（runMigrations）的正确比较语义：迁移逻辑随代码携带，
+     * 判定「存储中的旧版本是否需要迁移」应比较旧版本与当前构建的**基座版本**——
+     * 基座相同即本代码就是该基座版本发布线的实现（含全部已注册迁移），无需迁移。
+     *
+     * 为什么不能用标准 compare：dev 渠道构建产物版本为 `x.y.z-dev.<uuid>`
+     * （build.ts resolveVersion，每次构建可区分），SemVer 规则 11 决定预发布段
+     * 恒低于正式版——若用它做迁移门控，dev 用户每次加载页面都会判定迁移
+     * pending → main() reload → 再 pending → 无限重载循环（e2e 实测）。
+     * 构建元数据同理（SemVer 规则 10 不参与优先级，但预发布段是真实不等）。
+     */
+    public baseCompare(other: IVersion): VersionState {
+        let state = Version.compareValues(this.major, other.major)
+        if (state !== VersionState.Equal) return state
+        state = Version.compareValues(this.minor, other.minor)
+        if (state !== VersionState.Equal) return state
+        return Version.compareValues(this.patch, other.patch)
+    }
+    /**
      * 转换为字符串
      * @returns 语义化版本字符串
      */

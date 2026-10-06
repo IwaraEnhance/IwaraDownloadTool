@@ -1,4 +1,3 @@
-import '../setup.ts'
 import { Test, TestGroup } from '../framework.ts'
 import { Config } from '../../src/core/config.ts'
 
@@ -79,18 +78,5 @@ configTestGroup.add(
     })
 )
 
-configTestGroup.add(
-    new Test('远程修改触发 configChange', 'async', function () {
-        Config.destroyInstance()
-        const c = new Config() as any
-        const changed: string[] = []
-        c.configChange = (name: string) => {
-            changed.push(name)
-        }
-        ;(globalThis as any).__GM_simulateRemoteChange('downloadPriority', '720p')
-        this.assertTrue(changed.includes('downloadPriority'))
-        this.assertEqual(c.downloadPriority, '720p')
-        Config.destroyInstance()
-        GM_deleteValue('downloadPriority')
-    })
-)
+// 「远程修改触发 configChange」已迁 e2e（e2e/specs/gmBehavior.spec.ts）：Config 消费的
+// GM_addValueChangeListener remote 事件必须来自真实脚本管理器，Node 侧无法无 mock 验证。

@@ -1,23 +1,28 @@
 import '../core/env'
 import { isNullOrUndefined, prune, stringify } from '../core/env'
 import { Path } from '../core/path'
-import { ToastType } from '../core/enum'
 import { config } from '../core/config'
 import { unlimitedFetch, renderNode } from '../core/extension'
 import { createLogger } from '../core/log'
-import { newToast, toastNode } from '../ui/notify'
-import { analyzeLocalPath, getDownloadPath } from './downloadPath'
-import { domain } from '../main'
-import { pushDownloadTask } from './downloadQueue'
+import { report, toastNode } from '../core/notify'
+import { analyzeLocalPath, getDownloadPath, buildDownloadUrl } from './downloadPath'
+import { domain } from '../context/site'
 
 const log = createLogger('Download')
+
+/** 下载重试 hook（宿主注入）：browserDownload 失败后的“重试下载”回调。
+ * 重试回调由 main 组装注入。 */
+let retryDownloadHook: ((videoInfo: FullVideoInfo) => Promise<void>) | undefined
+export function setRetryDownloadHook(hook: (videoInfo: FullVideoInfo) => Promise<void>): void {
+    retryDownloadHook = hook
+}
 
 /**
  * 通过iwaradl下载视频
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export function iwaradlDownload(videoInfo: FullVideoInfo) {
-    ;(async function (videoInfo: FullVideoInfo) {
+    ; (async function (videoInfo: FullVideoInfo) {
         try {
             let proxyURL: URL | undefined
             if (!config.downloadProxy.isEmpty()) {
@@ -47,17 +52,15 @@ export function iwaradlDownload(videoInfo: FullVideoInfo) {
             })
             if (response.ok) {
                 log.info(`${videoInfo.Title} %#pushTaskSucceed#%`)
-                newToast(ToastType.Info, {
-                    node: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
-                }).show()
+                report('info', {
+                    body: toastNode(`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskSucceed#%`)
+                })
             }
         } catch (error) {
-            newToast(ToastType.Error, {
-                node: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFailed#% `, { nodeType: 'br' }, stringify(error)], '%#iwaradlDownload#%'),
-                onClick() {
-                    this.hide()
-                }
-            }).show()
+            report('error', {
+                title: '%#iwaradlDownload#%',
+                body: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#pushTaskFailed#% `, { nodeType: 'br' }, stringify(error)], '%#iwaradlDownload#%')
+            })
         }
     })(videoInfo)
 }
@@ -67,10 +70,9 @@ export function iwaradlDownload(videoInfo: FullVideoInfo) {
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export function othersDownload(videoInfo: FullVideoInfo) {
-    ;(async function (DownloadUrl: URL) {
-        DownloadUrl.searchParams.set('download', getDownloadPath(videoInfo).fullName)
-        GM_openInTab(DownloadUrl.href, { active: false, insert: true, setParent: true })
-    })(videoInfo.DownloadUrl.toURL())
+    // 执行器统一经 buildDownloadUrl 注入 videoid/download 参数（与 aria2 一致）
+    const DownloadUrl = buildDownloadUrl(videoInfo, getDownloadPath(videoInfo))
+    GM_openInTab(DownloadUrl.href, { active: false, insert: true, setParent: true })
 }
 
 /**
@@ -98,23 +100,25 @@ export function browserDownloadErrorParse(error: Tampermonkey.DownloadErrorRespo
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  */
 export function browserDownload(videoInfo: FullVideoInfo) {
-    ;(async function (videoInfo: FullVideoInfo) {
-        function toastError(error: Tampermonkey.DownloadErrorResponse | Error) {
-            let toast = newToast(ToastType.Error, {
-                node: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#downloadFailed#%`, { nodeType: 'br' }, browserDownloadErrorParse(error), { nodeType: 'br' }, `%#tryRestartingDownload#%`], '%#browserDownload#%'),
-                async onClick() {
-                    toast.hide()
-                    await pushDownloadTask(videoInfo)
+    ; (async function (videoInfo: FullVideoInfo) {
+        function reportError(error: Tampermonkey.DownloadErrorResponse | Error) {
+            // 报告走 core/notify 通道；重试交互经 retryDownloadHook（main 注入）
+            report('error', {
+                title: '%#browserDownload#%',
+                body: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#downloadFailed#%`, { nodeType: 'br' }, browserDownloadErrorParse(error), { nodeType: 'br' }, `%#tryRestartingDownload#%`], '%#browserDownload#%'),
+                close: true,
+                onClick: async (host) => {
+                    ; (host as { hide(): void })?.hide()
+                    await retryDownloadHook?.(videoInfo)
                 }
             })
-            toast.show()
         }
         GM_download({
             url: videoInfo.DownloadUrl,
             saveAs: false,
             name: getDownloadPath(videoInfo).fullPath,
-            onerror: (err) => toastError(err),
-            ontimeout: () => toastError(new Error('%#browserDownloadTimeout#%'))
+            onerror: (err) => reportError(err),
+            ontimeout: () => reportError(new Error('%#browserDownloadTimeout#%'))
         })
     })(videoInfo)
 }
@@ -146,18 +150,19 @@ function generateMetadataContent(videoInfo: FullVideoInfo): string {
 }
 export function browserDownloadMetadata(videoInfo: FullVideoInfo): void {
     const url = generateMatadataURL(videoInfo)
-    function toastError(error: Tampermonkey.DownloadErrorResponse | Error) {
-        newToast(ToastType.Error, {
-            node: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#videoMetadata#% %#downloadFailed#%`, { nodeType: 'br' }, browserDownloadErrorParse(error)], '%#browserDownload#%'),
+    function reportError(error: Tampermonkey.DownloadErrorResponse | Error) {
+        report('error', {
+            title: '%#browserDownload#%',
+            body: toastNode([`${videoInfo.Title}[${videoInfo.ID}] %#videoMetadata#% %#downloadFailed#%`, { nodeType: 'br' }, browserDownloadErrorParse(error)], '%#browserDownload#%'),
             close: true
-        }).show()
+        })
     }
     GM_download({
         url: url,
         saveAs: false,
         name: getMatadataPath(videoInfo),
-        onerror: (err) => toastError(err),
-        ontimeout: () => toastError(new Error('%#browserDownloadTimeout#%')),
+        onerror: (err) => reportError(err),
+        ontimeout: () => reportError(new Error('%#browserDownloadTimeout#%')),
         onload: () => URL.revokeObjectURL(url)
     })
 }

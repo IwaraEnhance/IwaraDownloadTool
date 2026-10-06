@@ -115,6 +115,14 @@ declare interface ImportConfig {
     addUnlistedAndPrivate: boolean
     filterUnlistedAndPrivate: boolean
     autoCollapseMenu: boolean
+    friendRequestApprove: boolean
+    /** 已启用的审批条件 id 列表（string[]，JSON 存储；键名与历史 GM 键一致） */
+    friendRequestApprovalConditions: string[]
+    /** 审批条件组合模式（any=任一满足即批准 / all=全部满足才批准） */
+    friendRequestApprovalMode: 'any' | 'all'
+    /** 论坛帖证据帖 ID（审批条件 commentedForumThread 的证据源） */
+    friendApproveEvidenceThreadId: string
+    promoteScriptAuthor: boolean
     downloadPriority: keyof Record<string, number>
     downloadType: DownloadType
     downloadPath: string

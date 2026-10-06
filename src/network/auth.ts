@@ -4,7 +4,7 @@ import { config } from '../core/config'
 import { createLogger } from '../core/log'
 import { unlimitedFetch } from '../core/extension'
 import { LS_KEY_ACCESS_TOKEN, LS_KEY_TOKEN } from '../core/constants'
-import { apiEndpoint } from '../main'
+import { apiUrl } from '../context/site'
 import { getXVersion } from './xVersion'
 
 const log = createLogger('Auth')
@@ -64,14 +64,14 @@ export async function verifyLogin(force = false): Promise<boolean> {
 
     let res: Response | undefined
     try {
-        res = await unlimitedFetch(`https://${apiEndpoint}/user`, {
+        res = await unlimitedFetch(apiUrl('/user'), {
             method: 'GET',
             headers: await getAuth()
         })
         if (!res.ok) {
             // accessToken 可能已过期：刷新后重试一次
             await refreshToken().catch(() => undefined)
-            res = await unlimitedFetch(`https://${apiEndpoint}/user`, {
+            res = await unlimitedFetch(apiUrl('/user'), {
                 method: 'GET',
                 headers: await getAuth()
             })
@@ -109,7 +109,7 @@ export async function refreshToken(): Promise<string> {
 
     const oldAccessToken = localStorage.getItem(LS_KEY_ACCESS_TOKEN)
     try {
-        const res = await unlimitedFetch(`https://${apiEndpoint}/user/token`, {
+        const res = await unlimitedFetch(apiUrl('/user/token'), {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${refreshToken}`
