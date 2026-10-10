@@ -677,10 +677,9 @@ async function scanAria2TasksAndEnqueue(): Promise<void> {
             // ② 已在活队列中 → 沿用 gid 跟随逻辑，让 worker 追踪真实下载；
             // ③ 两者都不在 → 入队待 worker 接管
             if (hasAria2TrackDone(videoId) && task.status !== 'active' && task.status !== 'waiting') {
-                // 30 天内已完成过的任务，除非还在 aria2 中活跃（active/waiting = 用户重新下载），
-                // 否则视为旧残留：停止该任务并清结果，不入队（与终态收尾语义一致）
-                await removeRedundantAria2Task(task)
-                stopped++
+                // 30 天内已完成过的任务，除非还在 aria2 中活跃（active/waiting = 用户重新下载），否则仅跳过入队；
+                // 不清理 aria2 侧记录——去重表职责是"防重复处理"而非"删除历史"，完成/失败记录由用户自行管理
+                // （v3.3.130 起误改为 removeRedundantAria2Task 清结果，导致 aria2 历史记录被脚本静默删除，Issue #405）
                 log.debug(`扫描 ${videoId}: 30 天内已完成，跳过残留任务 ${task.gid}(${task.status})`)
                 continue
             }
