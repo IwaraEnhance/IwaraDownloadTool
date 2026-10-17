@@ -44,6 +44,7 @@
 #### Recommended Script Managers
 
 - Tampermonkey **[Official Website](https://www.tampermonkey.net/)**
+- Violentmonkey **[Official Website](https://violentmonkey.github.io/)**
 
 #### Detailed Usage Instructions
 

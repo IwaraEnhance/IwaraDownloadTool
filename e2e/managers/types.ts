@@ -1,12 +1,13 @@
 /**
  * 脚本管理器驱动抽象：把「管理器特定」的扩展装载与脚本安装收敛为策略接口，
  * fixtures 的通用链路（两阶段 userScriptsAccess 权限预配置、profile 隔离、
- * 事件/产物解析）全部同源共享。E2E_MANAGER=scriptcat|tampermonkey 是切换点——
+ * 事件/产物解析）全部同源共享。E2E_MANAGER=scriptcat|tampermonkey|violentmonkey
+ * 是切换点——
  * 安装驱动是唯一需要按管理器分叉的部分。
  */
 import type { BrowserContext } from '@playwright/test'
 
-export type ManagerId = 'scriptcat' | 'tampermonkey'
+export type ManagerId = 'scriptcat' | 'tampermonkey' | 'violentmonkey'
 
 export interface ManagerDriver {
     /** 管理器标识（与 E2E_MANAGER 取值一致） */

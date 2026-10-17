@@ -217,7 +217,11 @@ async function main() {
                 updateURL: undefined,
                 downloadURL: undefined,
                 grant: probeGrants,
-                include: ['http://127.0.0.1/*', 'https://127.0.0.1/*'],
+                // ⚠️ 端口通配（127.0.0.1:*）：@include 是对完整 URL 的 glob，
+                // 固定写 127.0.0.1/* 在 Violentmonkey 上匹配不到带端口的本地宿主页；
+                // @match 虽忽略端口，但各管理器对 include/match 的合并语义并不一致，
+                // 显式列端口通配可保证三家都注入
+                include: ['http://127.0.0.1/*', 'http://127.0.0.1:*/*', 'https://127.0.0.1/*', 'https://127.0.0.1:*/*'],
                 match: ['http://127.0.0.1/*', 'http://127.0.0.1/*/*'],
                 'run-at': 'document-start'
             },

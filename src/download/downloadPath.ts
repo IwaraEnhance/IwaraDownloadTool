@@ -16,6 +16,30 @@ export function buildDownloadUrl(videoInfo: FullVideoInfo, localPath: Path): URL
 }
 
 /**
+ * 当前脚本管理器是否为 Violentmonkey（GM_info.scriptHandler 为 VM 固定标识）。
+ * 管理器差异适配集中在此判定，业务层不直接比较 scriptHandler。
+ */
+export function isViolentmonkey(): boolean {
+    return GM_info.scriptHandler === 'Violentmonkey'
+}
+
+/**
+ * GM_download 文件名适配（管理器差异集中点）。
+ *
+ * - Tampermonkey / ScriptCat：支持绝对路径与子目录，原样使用 fullPath；
+ * - Violentmonkey browser API 模式（downloadMode='browser'）：
+ *   browser.downloads 的 filename 必须相对 Downloads 目录，绝对路径会报错 →
+ *   去掉盘符/根前缀，保留相对子目录；
+ * - Violentmonkey native 模式（默认，内部走 <a download>）：不支持子目录 →
+ *   退化为纯文件名（老版本无 downloadMode 字段，同样按 native 处理）。
+ */
+export function getGMDownloadName(path: Path): string {
+    if (!isViolentmonkey()) return path.fullPath
+    const relative = path.fullPath.replace(/^[A-Za-z]:[\\/]/, '').replace(/^[\\/]+/, '')
+    return GM_info.downloadMode === 'browser' ? relative : path.fullName
+}
+
+/**
  * 根据视频信息生成下载路径
  * @param {FullVideoInfo} videoInfo - 视频信息对象
  * @returns {Path} 返回生成的路径对象

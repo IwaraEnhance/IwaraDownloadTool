@@ -15,9 +15,12 @@ if (!domain) {
     throw 'Not target'
 }
 
+// Violentmonkey 的 GM_* API（含跨页 GM_addValueChangeListener）与本项目所需能力兼容；
+// 管理器差异（GM_download 文件名/下载模式）在 downloadPath 与 envCheck 内归一。
 switch (GM_info.scriptHandler) {
     case 'Tampermonkey':
     case 'ScriptCat':
+    case 'Violentmonkey':
         break
     case 'Via':
         // Via 内置油猴引擎不支持 GM_getTabs/GM_saveTab，且跨页 GM_addValueChangeListener 不可靠，

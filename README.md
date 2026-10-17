@@ -48,6 +48,7 @@
 #### 推荐脚本管理器插件
 
 - Tampermonkey (篡改猴) **[前往官网](https://www.tampermonkey.net/)**
+- Violentmonkey (暴力猴) **[前往官网](https://violentmonkey.github.io/)**
 
 #### 详细使用说明
 

@@ -26,7 +26,14 @@ function reportCheckFail(body: Parameters<typeof toastNode>[0], title = '%#setti
  */
 export async function EnvCheck(): Promise<boolean> {
     try {
-        if (GM_info.scriptHandler !== 'ScriptCat' && GM_info.downloadMode !== 'browser') {
+        const handler = GM_info.scriptHandler
+        // Violentmonkey：GM_download 在 native/browser 两种模式均可用。native 模式内部走
+        // <a download>（文件名已由 getGMDownloadName 扁平化，不保留子目录），因此不强制
+        // 用户开启 browser API 下载模式；ScriptCat 同理不依赖 downloadMode。
+        if (handler === 'Violentmonkey' && GM_info.downloadMode !== 'browser') {
+            log.info('Violentmonkey 未启用浏览器 API 下载模式：GM_download 将使用浏览器原生下载，文件名不保留子目录')
+        }
+        if (handler !== 'ScriptCat' && handler !== 'Violentmonkey' && GM_info.downloadMode !== 'browser') {
             log.debug(GM_info)
             throw new Error('%#browserDownloadModeError#%')
         }

@@ -1,12 +1,14 @@
 import type { ManagerDriver, ManagerId } from './types'
 import { scriptcatDriver } from './scriptcat'
 import { tampermonkeyDriver } from './tampermonkey'
+import { violentmonkeyDriver } from './violentmonkey'
 
 export type { ManagerDriver, ManagerId }
 
 const DRIVERS: Record<ManagerId, ManagerDriver> = {
     scriptcat: scriptcatDriver,
-    tampermonkey: tampermonkeyDriver
+    tampermonkey: tampermonkeyDriver,
+    violentmonkey: violentmonkeyDriver
 }
 
 let cached: ManagerDriver | undefined

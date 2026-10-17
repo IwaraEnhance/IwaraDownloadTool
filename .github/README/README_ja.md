@@ -46,6 +46,7 @@
 #### 推奨スクリプトマネージャー
 
 - Tampermonkey **[公式サイト](https://www.tampermonkey.net/)**
+- Violentmonkey **[公式サイト](https://violentmonkey.github.io/)**
 
 #### 詳細な使用説明
 

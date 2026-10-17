@@ -11,7 +11,8 @@ export class GMSyncDictionary<T> extends Dictionary<T> {
     public onSync?: () => void
 
     private name: string
-    private listenerId: number | null = null
+    /** 监听器 ID：Tampermonkey/ScriptCat 为 number，Violentmonkey 为 string（统一用返回类型声明） */
+    private listenerId: ReturnType<typeof GM_addValueChangeListener> | null = null
     private static readonly BATCH_THRESHOLD = 10
 
     /**

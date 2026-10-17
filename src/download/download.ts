@@ -5,7 +5,7 @@ import { config } from '../core/config'
 import { unlimitedFetch, renderNode } from '../core/extension'
 import { createLogger } from '../core/log'
 import { report, toastNode } from '../core/notify'
-import { analyzeLocalPath, getDownloadPath, buildDownloadUrl } from './downloadPath'
+import { analyzeLocalPath, getDownloadPath, buildDownloadUrl, getGMDownloadName } from './downloadPath'
 import { domain } from '../context/site'
 
 const log = createLogger('Download')
@@ -116,7 +116,7 @@ export function browserDownload(videoInfo: FullVideoInfo) {
         GM_download({
             url: videoInfo.DownloadUrl,
             saveAs: false,
-            name: getDownloadPath(videoInfo).fullPath,
+            name: getGMDownloadName(getDownloadPath(videoInfo)),
             onerror: (err) => reportError(err),
             ontimeout: () => reportError(new Error('%#browserDownloadTimeout#%'))
         })
@@ -128,9 +128,9 @@ function generateMatadataURL(videoInfo: FullVideoInfo): string {
     const blob = new Blob([metadataContent], { type: 'text/plain' })
     return URL.createObjectURL(blob)
 }
-function getMatadataPath(videoInfo: FullVideoInfo): string {
+function getMatadataPath(videoInfo: FullVideoInfo): Path {
     const videoPath = getDownloadPath(videoInfo)
-    return `${videoPath.directory}/${videoPath.baseName}.json`
+    return analyzeLocalPath(`${videoPath.directory}/${videoPath.baseName}.json`)
 }
 function generateMetadataContent(videoInfo: FullVideoInfo): string {
     const metadata = Object.assign({}, videoInfo, {
@@ -160,7 +160,7 @@ export function browserDownloadMetadata(videoInfo: FullVideoInfo): void {
     GM_download({
         url: url,
         saveAs: false,
-        name: getMatadataPath(videoInfo),
+        name: getGMDownloadName(getMatadataPath(videoInfo)),
         onerror: (err) => reportError(err),
         ontimeout: () => reportError(new Error('%#browserDownloadTimeout#%')),
         onload: () => URL.revokeObjectURL(url)
@@ -168,7 +168,7 @@ export function browserDownloadMetadata(videoInfo: FullVideoInfo): void {
 }
 export function othersDownloadMetadata(videoInfo: FullVideoInfo): void {
     const url = generateMatadataURL(videoInfo)
-    const metadataFile = analyzeLocalPath(getMatadataPath(videoInfo)).fullName
+    const metadataFile = getMatadataPath(videoInfo).fullName
     const downloadHandle = renderNode({
         nodeType: 'a',
         attributes: {

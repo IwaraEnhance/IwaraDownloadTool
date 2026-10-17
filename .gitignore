@@ -4,5 +4,6 @@
 /docs
 /e2e/.scriptcatStore
 /e2e/.tampermonkeyStore
+/e2e/.violentmonkeyStore
 .DS_Store
 Thumbs.db

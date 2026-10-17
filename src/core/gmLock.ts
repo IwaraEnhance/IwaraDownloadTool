@@ -347,7 +347,7 @@ export class GMLock {
             const waitMs = Math.max(15, Math.min(remain + 5, deadline - Date.now()))
 
             await new Promise<void>((resolve) => {
-                let listenerId: number | undefined
+                let listenerId: ReturnType<typeof GM_addValueChangeListener> | undefined
                 let timer: ReturnType<typeof setTimeout> | undefined
                 // 幂等守卫：监听器与定时器都可能触发 done，二次进入只 resolve 不重复清理
                 let settled = false

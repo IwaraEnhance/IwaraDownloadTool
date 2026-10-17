@@ -283,7 +283,7 @@ async function pushDownloadTaskInner(videoInfo: VideoInfo) {
                             onClick: (t) => {
                                 GM_openInTab(`https://www.${domain}/video/${videoInfo.ID}`, { active: false, insert: true, setParent: true })
                                 if (config.autoCopySaveFileName) {
-                                    GM_setClipboard(getDownloadPath(videoInfo).fullName, 'text')
+                                    GM_setClipboard(getDownloadPath(videoInfo).fullName, 'text/plain')
                                     toastBody.appendChild(
                                         renderNode({
                                             nodeType: 'p',
